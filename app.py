@@ -369,10 +369,8 @@ st.divider()
 
 st.subheader("✏️ Edit Operan")
 
-edit_id = st.number_input(
-    "Masukkan ID Data",
-    min_value=1,
-    step=1
+edit_no_rm = st.text_input(
+    "Masukkan No RM"
 )
 
 edit_nama = st.text_input(
@@ -398,13 +396,13 @@ if st.button("💾 Update Operan"):
             operan = ?,
             edited_by = ?,
             edited_at = ?
-        WHERE id = ?
+        WHERE no_rm = ?
         """,
         (
             edit_operan,
             edit_nama,
             waktu_edit,
-            edit_id
+            edit_no_rm
         )
     )
 
