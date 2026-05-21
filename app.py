@@ -179,8 +179,9 @@ with st.form("form_operan"):
 
     with col1:
 
-        tanggal = st.date_input(
-            "Tanggal"
+        tanggal = pd.Timestamp.now().strftime(
+    "%Y-%m-%d %H:%M:%S"
+        
         )
 
         shift = st.selectbox(
