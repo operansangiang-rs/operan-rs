@@ -20,19 +20,17 @@ st.set_page_config(
 )
 
 # =========================
-# DARK GRAY THEME (FIX)
+# DARK GRAY THEME
 # =========================
 st.markdown("""
 <style>
 
-/* background utama abu tua */
 .block-container {
     background: #1f2937;
     padding-top: 1rem;
-    color: white;
+    color: #e5e7eb;
 }
 
-/* sidebar lebih gelap */
 section[data-testid="stSidebar"] {
     background: #111827 !important;
 }
@@ -41,33 +39,17 @@ section[data-testid="stSidebar"] * {
     color: #e5e7eb !important;
 }
 
-/* card data */
-div[data-testid="stVerticalBlockBorderWrapper"] {
-    background: #374151;
-    border-radius: 12px;
-    padding: 10px;
-    margin-bottom: 10px;
-}
-
-/* metric */
 div[data-testid="stMetric"]{
     background: #374151;
-    color: white;
     padding: 12px;
     border-radius: 12px;
+    color: white;
 }
 
-/* text color */
-html, body, [class*="css"]  {
-    color: #e5e7eb;
-}
-
-/* button */
 .stButton>button {
     background: #6b7280;
     color: white;
     border-radius: 8px;
-    border: none;
 }
 
 .stButton>button:hover {
@@ -137,7 +119,7 @@ hour = datetime.now(jakarta).hour
 auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
-# INPUT
+# INPUT FORM
 # =========================
 st.subheader("📝 Input Operan")
 
@@ -146,19 +128,29 @@ with st.container():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.text_input("Tanggal", datetime.now(jakarta).strftime("%Y-%m-%d %H:%M"), disabled=True)
-        st.text_input("Shift", auto_shift, disabled=True)
+        st.text_input(
+            "Tanggal",
+            datetime.now(jakarta).strftime("%Y-%m-%d %H:%M"),
+            disabled=True,
+            key="tgl_show"
+        )
+        st.text_input(
+            "Shift",
+            auto_shift,
+            disabled=True,
+            key="shift_show"
+        )
 
     with col2:
-        no_rm = st.text_input("No RM")
-        nama_pasien = st.text_input("Nama Pasien")
+        no_rm = st.text_input("No RM", key="no_rm_input")
+        nama_pasien = st.text_input("Nama Pasien", key="nama_input")
 
     with col3:
-        kamar = st.text_input("Kamar")
-        diagnosa = st.text_input("Diagnosa")
-        pj_operan = st.text_input("PJ Operan")
+        kamar = st.text_input("Kamar", key="kamar_input")
+        diagnosa = st.text_input("Diagnosa", key="diag_input")
+        pj_operan = st.text_input("PJ Operan", key="pj_input")
 
-    operan = st.text_area("Isi Operan", height=140)
+    operan = st.text_area("Isi Operan", height=140, key="operan_input")
 
     if st.button("💾 Simpan Operan", use_container_width=True):
 
@@ -173,16 +165,23 @@ with st.container():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
-                selected_unit, auto_shift,
-                no_rm, nama_pasien, kamar,
-                diagnosa, operan, pj_operan
+                selected_unit,
+                auto_shift,
+                no_rm,
+                nama_pasien,
+                kamar,
+                diagnosa,
+                operan,
+                pj_operan
             ))
 
             conn.commit()
+
+            # reset input aman
             st.rerun()
 
 # =========================
-# DATA
+# DATA LIST
 # =========================
 st.subheader("📋 Data Operan")
 
@@ -206,7 +205,6 @@ for _, r in df.iterrows():
 
         st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
-        # DETAIL
         with st.expander("📄 Detail Operan"):
 
             st.write(r["operan"])
@@ -215,15 +213,10 @@ for _, r in df.iterrows():
 
             colA, colB = st.columns(2)
 
-            # DELETE
-            with colA:
-                if st.button("🗑 Hapus", key=f"del_{r['id']}"):
-                    c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
-                    conn.commit()
-                    st.rerun()
-
-            with colB:
-                st.info("Hapus permanen")
+            if st.button("🗑 Hapus", key=f"del_{r['id']}"):
+                c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
+                conn.commit()
+                st.rerun()
 
 # =========================
 # EDIT
@@ -231,11 +224,11 @@ for _, r in df.iterrows():
 st.divider()
 st.subheader("✏️ Edit Operan")
 
-edit_rm = st.text_input("No RM")
-edit_by = st.text_input("Nama Editor")
-edit_text = st.text_area("Operan Baru")
+edit_rm = st.text_input("No RM", key="edit_rm")
+edit_by = st.text_input("Nama Editor", key="edit_by")
+edit_text = st.text_area("Operan Baru", key="edit_text")
 
-if st.button("Update Operan"):
+if st.button("Update Operan", key="btn_update"):
 
     now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -263,8 +256,8 @@ if st.button("Update Operan"):
 st.divider()
 st.subheader("⬇️ Download PDF")
 
-start = st.date_input("Dari")
-end = st.date_input("Sampai")
+start = st.date_input("Dari", key="start_pdf")
+end = st.date_input("Sampai", key="end_pdf")
 
 pdf_df = pd.read_sql_query("""
 SELECT * FROM operan
