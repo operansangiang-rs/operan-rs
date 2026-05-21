@@ -11,56 +11,36 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import landscape, A4
 
 # =========================
-# CONFIG
+# CONFIG UI
 # =========================
 st.set_page_config(
-    page_title="SIMRS Operan",
+    page_title="SIMRS Operan Mobile",
     page_icon="🏥",
     layout="centered"
 )
 
-# =========================
-# STYLE MOBILE APP
-# =========================
 st.markdown("""
 <style>
-
-.block-container {
-    padding: 1rem;
-    background: #111827;
-    color: white;
-}
-
-h1, h2, h3 {
-    color: white !important;
-}
+.block-container {background:#111827;color:white;padding:1rem;}
+h1,h2,h3 {color:white !important;}
 
 .card {
-    background: #1f2937;
-    padding: 12px;
-    border-radius: 12px;
-    margin-bottom: 10px;
+    background:#1f2937;
+    padding:12px;
+    border-radius:12px;
+    margin-bottom:10px;
 }
 
-.small {
-    font-size: 12px;
-    color: #9ca3af;
+.stButton>button{
+    width:100%;
+    background:#374151;
+    color:white;
+    border-radius:10px;
 }
-
-.stButton>button {
-    width: 100%;
-    border-radius: 10px;
-    background: #374151;
-    color: white;
-    padding: 10px;
-}
-
-.stButton>button:hover {
-    background: #6b7280;
-}
-
 </style>
 """, unsafe_allow_html=True)
+
+st.title("🏥 SIMRS OPERAN MOBILE")
 
 # =========================
 # DB
@@ -89,15 +69,9 @@ conn.commit()
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
-# HEADER APP STYLE
+# UNIT
 # =========================
-st.markdown("# 🏥 SIMRS OPERAN")
-st.markdown("### Sistem Operan Shift Mobile")
-
-# =========================
-# UNIT (FULL WIDTH DROPDOWN)
-# =========================
-unit_list = ["ICU","IGD","NICU","PICU","RPU LT 1","RPU LT 2","RPU LT 3 GL"]
+unit_list = ["ICU","IGD","NICU","PICU","RPU LT 1","RPU LT 2","RPU LT 3"]
 
 selected_unit = st.selectbox("🏥 Pilih Unit", unit_list)
 
@@ -110,42 +84,76 @@ hour = datetime.now(jakarta).hour
 shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
-# INPUT CARD
+# INPUT FORM
 # =========================
 st.markdown("## ➕ Input Operan")
 
-with st.container():
-    with st.form("form"):
-        no_rm = st.text_input("No RM")
-        nama = st.text_input("Nama Pasien")
-        kamar = st.text_input("Kamar")
-        diagnosa = st.text_input("Diagnosa")
-        pj = st.text_input("PJ Operan")
-        isi = st.text_area("Isi Operan", height=120)
+with st.form("form_input"):
+    no_rm = st.text_input("No RM", key="in_rm")
+    nama = st.text_input("Nama Pasien", key="in_nama")
+    kamar = st.text_input("Kamar", key="in_kamar")
+    diagnosa = st.text_input("Diagnosa", key="in_diag")
+    pj = st.text_input("PJ Operan", key="in_pj")
+    isi = st.text_area("Isi Operan", key="in_isi")
 
-        submitted = st.form_submit_button("💾 SIMPAN OPERAN")
+    submit = st.form_submit_button("💾 SIMPAN")
 
-        if submitted:
-            if no_rm and nama:
-                c.execute("""
-                    INSERT INTO operan (
-                        tanggal, unit, shift, no_rm,
-                        nama_pasien, kamar, diagnosa,
-                        operan, pj_operan
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
-                    selected_unit, shift,
-                    no_rm, nama, kamar, diagnosa,
-                    isi, pj
-                ))
-                conn.commit()
-                st.success("Tersimpan")
-                st.rerun()
+    if submit:
+        if no_rm and nama:
+            c.execute("""
+                INSERT INTO operan (
+                    tanggal, unit, shift, no_rm,
+                    nama_pasien, kamar, diagnosa,
+                    operan, pj_operan
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
+                selected_unit,
+                shift,
+                no_rm,
+                nama,
+                kamar,
+                diagnosa,
+                isi,
+                pj
+            ))
+            conn.commit()
+            st.success("Tersimpan")
+            st.rerun()
 
 # =========================
-# DATA CARD LIST (ANDROID STYLE)
+# SEARCH RM (FIX YANG KAMU MAU)
+# =========================
+st.markdown("## 🔎 Cari RM / Nama")
+
+search = st.text_input("Cari Pasien", key="search_box")
+
+if search:
+
+    df_search = pd.read_sql_query("""
+    SELECT * FROM operan
+    WHERE unit=?
+    AND (no_rm LIKE ? OR nama_pasien LIKE ?)
+    ORDER BY id DESC
+    LIMIT 20
+    """, conn, params=(selected_unit, f"%{search}%", f"%{search}%"))
+
+    for _, r in df_search.iterrows():
+
+        st.markdown(f"""
+        <div class="card">
+            👤 <b>{r['nama_pasien']}</b> ({r['no_rm']})<br>
+            🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
+            📅 {r['tanggal']}
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.expander("📄 Detail Operan"):
+            st.write(r["operan"])
+
+# =========================
+# DATA LIST (MOBILE CARD)
 # =========================
 st.markdown("## 📋 Data Operan")
 
@@ -159,26 +167,27 @@ LIMIT 30
 for _, r in df.iterrows():
 
     with st.container():
+
         st.markdown(f"""
         <div class="card">
-            <b>📅 {r['tanggal']}</b><br>
-            👤 {r['nama_pasien']} ({r['no_rm']})<br>
-            🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
-            👨‍⚕️ PJ: {r['pj_operan']}<br>
-            <span class="small">Shift: {r['shift']}</span>
+        📅 {r['tanggal']}<br>
+        👤 {r['nama_pasien']} ({r['no_rm']})<br>
+        🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
+        👨‍⚕️ PJ: {r['pj_operan']}<br>
+        <small>Shift: {r['shift']}</small>
         </div>
         """, unsafe_allow_html=True)
 
-        with st.expander("🔎 Lihat Detail Operan"):
+        with st.expander("📄 Detail Operan"):
             st.write(r["operan"])
 
 # =========================
-# EDIT SIMPLE
+# EDIT TERAKHIR
 # =========================
 st.markdown("## ✏️ Edit Operan")
 
-edit_rm = st.text_input("No RM Edit")
-edit_text = st.text_area("Operan Baru")
+edit_rm = st.text_input("No RM Edit", key="edit_rm")
+edit_text = st.text_area("Operan Baru", key="edit_text")
 
 if st.button("UPDATE"):
     now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
@@ -199,13 +208,13 @@ if st.button("UPDATE"):
         """, (edit_text, now, last[0]))
 
         conn.commit()
-        st.success("Update sukses")
+        st.success("Updated")
         st.rerun()
 
 # =========================
-# PDF
+# PDF DOWNLOAD
 # =========================
-st.markdown("## 📤 Download")
+st.markdown("## 📤 Download PDF")
 
 start = st.date_input("Dari")
 end = st.date_input("Sampai")
@@ -214,6 +223,7 @@ pdf_df = pd.read_sql_query("""
 SELECT * FROM operan
 WHERE unit=?
 AND date(tanggal) BETWEEN date(?) AND date(?)
+ORDER BY tanggal DESC
 """, conn, params=(selected_unit, str(start), str(end)))
 
 def make_pdf(df):
@@ -242,5 +252,5 @@ if not pdf_df.empty:
     st.download_button(
         "⬇️ Download PDF",
         make_pdf(pdf_df),
-        "simrs_operan.pdf"
+        "operan.pdf"
     )
