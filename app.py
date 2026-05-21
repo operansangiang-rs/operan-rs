@@ -272,3 +272,50 @@ st.dataframe(
 st.caption(
     f"Total data {selected_unit}: {len(unit_df)}"
 )
+
+
+# =========================
+# ADMIN DATABASE VIEWER
+# =========================
+st.divider()
+
+with st.expander("🗄️ Lihat Database"):
+
+    all_data = pd.read_sql_query(
+        """
+        SELECT *
+        FROM operan
+        ORDER BY id DESC
+        """,
+        conn
+    )
+
+    st.dataframe(
+        all_data,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.caption(
+        f"Total seluruh data: {len(all_data)}"
+    )
+
+# =========================
+# DOWNLOAD DATABASE
+# =========================
+try:
+
+    with open("operan.db", "rb") as file:
+
+        st.download_button(
+            label="⬇️ Download Database",
+            data=file,
+            file_name="operan.db",
+            mime="application/octet-stream"
+        )
+
+except Exception as e:
+
+    st.warning(
+        f"Gagal download database: {e}"
+    )
