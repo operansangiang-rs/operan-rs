@@ -2,6 +2,9 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from io import BytesIO
+from datetime import datetime
+import pytz
+
 from reportlab.platypus import (
     SimpleDocTemplate,
     Table,
@@ -9,6 +12,7 @@ from reportlab.platypus import (
     Paragraph,
     Spacer
 )
+
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import landscape, A4
@@ -23,6 +27,13 @@ st.set_page_config(
 )
 
 st.title("🏥 Operan Shift RS Sari Asih Sangiang")
+
+# =========================
+# TIMEZONE JAKARTA
+# =========================
+jakarta = pytz.timezone(
+    "Asia/Jakarta"
+)
 
 # =========================
 # DATABASE
@@ -179,7 +190,9 @@ with st.form("form_operan"):
 
     with col1:
 
-        tanggal = pd.Timestamp.now().strftime(
+        tanggal = datetime.now(
+            jakarta
+        ).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
 
