@@ -197,47 +197,64 @@ if submit:
         st.rerun()
 
 # =========================
-# LIST DATA
+# DATA LIST (INLINE DETAIL FIX)
 # =========================
-st.subheader(f"📋 Data Operan - {selected_unit}")
+st.subheader("📋 Data Operan")
 
-df = load_data(selected_unit)
+df = pd.read_sql_query("""
+SELECT *
+FROM operan
+WHERE unit = ?
+ORDER BY id DESC
+LIMIT 100
+""", conn, params=(selected_unit,))
 
-for _, row in df.iterrows():
+if "open_detail" not in st.session_state:
+    st.session_state["open_detail"] = None
+
+for _, r in df.iterrows():
 
     with st.container():
-
         st.markdown("---")
 
         col1, col2, col3, col4 = st.columns(4)
 
-        with col1:
-            st.write("📅", row["tanggal"])
+        col1.write(f"📅 {r['tanggal']}")
+        col2.write(f"⏱ {r['shift']}")
+        col3.write(f"🆔 {r['no_rm']}")
+        col4.write(f"👤 {r['nama_pasien']}")
 
-        with col2:
-            st.write("⏱", row["shift"])
+        st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
-        with col3:
-            st.write("🆔", row["no_rm"])
+        colA, colB = st.columns([1, 1])
 
-        with col4:
-            st.write("👤", row["nama_pasien"])
+        # =========================
+        # BUTTON DETAIL (INLINE)
+        # =========================
+        if colA.button("📄 Detail", key=f"detail_{r['id']}"):
 
-        col5, col6 = st.columns([3,1])
+            # toggle buka/tutup
+            if st.session_state["open_detail"] == r["id"]:
+                st.session_state["open_detail"] = None
+            else:
+                st.session_state["open_detail"] = r["id"]
 
-        with col5:
-            st.write("🏠 Kamar:", row["kamar"])
+        # =========================
+        # BUTTON DELETE
+        # =========================
+        if colB.button("🗑 Hapus", key=f"del_{r['id']}"):
 
-        with col6:
+            c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
+            conn.commit()
+            st.rerun()
 
-            if st.button("📄 Detail", key=f"btn_{row['id']}"):
+        # =========================
+        # DETAIL MUNCUL DI BAWAH ITEM YANG DIPILIH
+        # =========================
+        if st.session_state["open_detail"] == r["id"]:
 
-                st.session_state["detail"] = {
-                    "nama": row["nama_pasien"],
-                    "rm": row["no_rm"],
-                    "tanggal": row["tanggal"],
-                    "operan": row["operan"]
-                }
+            st.info(r["operan"])
+            st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
 
 # =========================
 # DETAIL VIEW
