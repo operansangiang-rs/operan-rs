@@ -1,62 +1,30 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from io import BytesIO
 from datetime import datetime
 import pytz
-
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Table,
-    TableStyle,
-    Paragraph,
-    Spacer
-)
-
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import landscape, A4
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(
-    page_title="Operan Shift RS Sari Asih Sangiang",
-    page_icon="🏥",
-    layout="wide"
-)
+st.set_page_config("SIMRS Operan", "🏥", layout="wide")
 
-st.title("🏥 Operan Shift RS Sari Asih Sangiang")
+st.title("🏥 SIMRS Operan Shift")
 
-# =========================
-# TIMEZONE JAKARTA
-# =========================
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
-# DB CONNECTION (OPTIMIZED)
+# DB
 # =========================
 @st.cache_resource
-def get_connection():
-
-    conn = sqlite3.connect(
-        "operan.db",
-        check_same_thread=False
-    )
-
+def conn_db():
+    conn = sqlite3.connect("operan.db", check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA temp_store = MEMORY;")
-    conn.execute("PRAGMA cache_size = 10000;")
-
     return conn
 
-conn = get_connection()
+conn = conn_db()
 c = conn.cursor()
 
-# =========================
-# TABLE
-# =========================
 c.execute("""
 CREATE TABLE IF NOT EXISTS operan (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,252 +36,129 @@ CREATE TABLE IF NOT EXISTS operan (
     kamar TEXT,
     diagnosa TEXT,
     operan TEXT,
-    pj_operan TEXT,
-    edited_by TEXT,
-    edited_at TEXT
+    pj_operan TEXT
 )
 """)
 conn.commit()
+
+# =========================
+# SESSION PAGE
+# =========================
+if "page" not in st.session_state:
+    st.session_state["page"] = "dashboard"
 
 # =========================
 # AUTO SHIFT
 # =========================
 jam = datetime.now(jakarta).hour
 
-if 7 <= jam < 14:
-    auto_shift = "Pagi"
-elif 14 <= jam < 21:
-    auto_shift = "Sore"
-else:
-    auto_shift = "Malam"
+auto_shift = (
+    "Pagi" if jam < 14 else
+    "Sore" if jam < 21 else
+    "Malam"
+)
 
 # =========================
-# UNIT
+# LOAD DATA
 # =========================
-unit_list = [
-    "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
-    "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
-    "IGD","NICU","PICU"
-]
-
-st.sidebar.title("🏥 Pilih Unit")
-selected_unit = st.sidebar.selectbox("Unit", unit_list)
-
-# =========================
-# CACHE UNIT DATA (ANTI LAG UTAMA)
-# =========================
-@st.cache_data(ttl=15)
-def load_unit_data(unit):
-
+@st.cache_data(ttl=10)
+def load(unit):
     return pd.read_sql_query("""
-        SELECT
-            id, tanggal, shift, no_rm,
-            nama_pasien, kamar, diagnosa,
-            operan, pj_operan, edited_by, edited_at
-        FROM operan
+        SELECT * FROM operan
         WHERE unit = ?
         ORDER BY id DESC
         LIMIT 100
     """, conn, params=(unit,))
 
 # =========================
-# CACHE SEARCH
+# PAGE: DASHBOARD
 # =========================
-@st.cache_data(ttl=10)
-def search_pasien(q):
+if st.session_state["page"] == "dashboard":
 
-    return pd.read_sql_query("""
-        SELECT *
-        FROM operan
-        WHERE no_rm LIKE ?
-        OR nama_pasien LIKE ?
-        ORDER BY id DESC
-        LIMIT 50
-    """, conn, params=(f"%{q}%", f"%{q}%"))
+    unit = st.selectbox("Unit", [
+        "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
+        "RPU LT 4","RPU LT 5","HD","OK","IGD","NICU","PICU"
+    ])
 
-# =========================
-# SEARCH
-# =========================
-st.subheader("🔎 Cari Pasien")
+    df = load(unit)
 
-search = st.text_input("Cari No RM / Nama")
+    st.subheader("📋 Pasien")
 
-if len(search) >= 3:
-    df_search = search_pasien(search)
+    for _, r in df.iterrows():
 
-    st.dataframe(
-        df_search,
-        use_container_width=True,
-        height=300
-    )
+        col1, col2, col3, col4 = st.columns([2,2,2,1])
 
-elif search != "":
-    st.info("Minimal 3 karakter")
+        with col1:
+            st.write(r["no_rm"])
+        with col2:
+            st.write(r["nama_pasien"])
+        with col3:
+            st.write(r["kamar"])
 
-st.divider()
+        with col4:
+            if st.button("Open", key=r["id"]):
+
+                st.session_state["selected"] = r.to_dict()
+                st.session_state["page"] = "detail"
+                st.rerun()
 
 # =========================
-# FORM INPUT
+# PAGE: DETAIL PASIEN
 # =========================
-st.subheader(f"📝 Input Operan - {selected_unit}")
+elif st.session_state["page"] == "detail":
 
-with st.form("form"):
+    data = st.session_state["selected"]
 
-    col1, col2 = st.columns(2)
+    st.button("⬅ Kembali", on_click=lambda: st.session_state.update({"page":"dashboard"}))
 
-    with col1:
+    st.subheader(f"👤 {data['nama_pasien']}")
 
-        tanggal = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
+    st.write("🆔 RM:", data["no_rm"])
+    st.write("🏠 Kamar:", data["kamar"])
+    st.write("🩺 Diagnosa:", data["diagnosa"])
+    st.write("⏱ Shift:", data["shift"])
 
-        st.text_input("Tanggal", value=tanggal, disabled=True)
+    st.divider()
 
-        st.text_input("Shift", value=auto_shift, disabled=True)
-        shift = auto_shift
+    st.subheader("📄 Operan")
+    st.info(data["operan"])
 
-        no_rm = st.text_input("No RM")
-        nama_pasien = st.text_input("Nama Pasien")
+    st.divider()
 
-    with col2:
+    if st.button("✏ Edit"):
 
-        kamar = st.text_input("Kamar")
-        diagnosa = st.text_input("Diagnosa")
-        pj_operan = st.text_input("PJ Operan")
-
-    operan = st.text_area("Operan", max_chars=1500)
-
-    submit = st.form_submit_button("Simpan")
+        st.session_state["edit"] = True
 
 # =========================
-# SAVE
+# EDIT MODE
 # =========================
-if submit:
+    if st.session_state.get("edit"):
 
-    if no_rm and nama_pasien:
+        new_op = st.text_area("Edit Operan", data["operan"])
 
-        c.execute("""
-            INSERT INTO operan (
-                tanggal, unit, shift,
-                no_rm, nama_pasien,
-                kamar, diagnosa,
-                operan, pj_operan
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            tanggal, selected_unit, shift,
-            no_rm, nama_pasien,
-            kamar, diagnosa,
-            operan, pj_operan
-        ))
+        if st.button("Simpan Update"):
 
-        conn.commit()
+            c.execute("""
+                UPDATE operan
+                SET operan = ?
+                WHERE id = ?
+            """, (new_op, data["id"]))
 
-        load_unit_data.clear()
-        search_pasien.clear()
+            conn.commit()
 
-        st.success("Tersimpan")
-        st.rerun()
+            st.success("Updated")
 
-    else:
-        st.warning("No RM & Nama wajib")
+            st.session_state["page"] = "dashboard"
+            st.session_state["edit"] = False
+
+            st.rerun()
 
 # =========================
-# DATA VIEW (FAST)
+# INPUT PAGE (optional simple)
 # =========================
-st.subheader(f"📋 Data - {selected_unit}")
+st.sidebar.divider()
 
-df = load_unit_data(selected_unit)
+if st.sidebar.button("➕ Input Operan"):
 
-st.dataframe(df, use_container_width=True, height=400)
-
-st.caption(f"{len(df)} data terbaru")
-
-# =========================
-# EDIT
-# =========================
-st.divider()
-st.subheader("✏️ Edit Operan")
-
-edit_no_rm = st.text_input("No RM Edit")
-edit_by = st.text_input("Nama Pengedit")
-edit_text = st.text_area("Operan Baru")
-
-if st.button("Update"):
-
-    waktu = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
-
-    c.execute("""
-        UPDATE operan
-        SET operan = ?, edited_by = ?, edited_at = ?
-        WHERE no_rm = ?
-    """, (edit_text, edit_by, waktu, edit_no_rm))
-
-    conn.commit()
-
-    load_unit_data.clear()
-    search_pasien.clear()
-
-    st.success("Updated")
+    st.session_state["page"] = "input"
     st.rerun()
-
-# =========================
-# PDF (LIGHT QUERY)
-# =========================
-st.divider()
-st.subheader("⬇️ PDF")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    start = st.date_input("Dari")
-
-with col2:
-    end = st.date_input("Sampai")
-
-pdf_df = pd.read_sql_query("""
-    SELECT
-        tanggal, unit, shift,
-        no_rm, nama_pasien,
-        kamar, diagnosa, operan, pj_operan
-    FROM operan
-    WHERE unit = ?
-    AND date(tanggal) BETWEEN date(?) AND date(?)
-    ORDER BY id DESC
-""", conn, params=(selected_unit, str(start), str(end)))
-
-
-def make_pdf(df):
-
-    buffer = BytesIO()
-
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
-    styles = getSampleStyleSheet()
-
-    elements = [
-        Paragraph(f"Operan - {selected_unit}", styles["Title"]),
-        Spacer(1, 10)
-    ]
-
-    data = [list(df.columns)] + df.values.tolist()
-
-    table = Table(data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.grey),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('FONTSIZE', (0,0), (-1,-1), 8),
-    ]))
-
-    elements.append(table)
-    doc.build(elements)
-
-    return buffer.getvalue()
-
-
-if not pdf_df.empty:
-    st.download_button(
-        "Download PDF",
-        make_pdf(pdf_df),
-        f"operan_{selected_unit}.pdf"
-    )
-else:
-    st.info("Tidak ada data")
