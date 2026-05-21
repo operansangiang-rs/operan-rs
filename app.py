@@ -1,7 +1,6 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime
 
 # =========================
 # CONFIG
@@ -25,12 +24,17 @@ conn = sqlite3.connect(
 c = conn.cursor()
 
 # =========================
+# OPTIMASI SQLITE
+# =========================
+c.execute("PRAGMA journal_mode=WAL;")
+c.execute("PRAGMA synchronous=NORMAL;")
+
+# =========================
 # CREATE TABLE
 # =========================
 c.execute("""
 CREATE TABLE IF NOT EXISTS operan (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     tanggal TEXT,
     unit TEXT,
     shift TEXT,
@@ -47,15 +51,23 @@ conn.commit()
 # =========================
 # AUTO DELETE > 40 HARI
 # =========================
-c.execute("""
-DELETE FROM operan
-WHERE created_at <= datetime('now', '-40 day')
-""")
+try:
 
-conn.commit()
+    c.execute("""
+    DELETE FROM operan
+    WHERE date(tanggal) <= date('now', '-40 day')
+    """)
+
+    conn.commit()
+
+except Exception as e:
+
+    st.warning(
+        f"Auto delete error: {e}"
+    )
 
 # =========================
-# SIDEBAR UNIT
+# LIST UNIT
 # =========================
 unit_list = [
     "ICU",
@@ -71,10 +83,13 @@ unit_list = [
     "PICU"
 ]
 
-st.sidebar.title("🏥 Unit")
+# =========================
+# SIDEBAR
+# =========================
+st.sidebar.title("🏥 Pilih Unit")
 
 selected_unit = st.sidebar.selectbox(
-    "Pilih Unit",
+    "Unit",
     unit_list
 )
 
@@ -123,30 +138,44 @@ if search:
 st.divider()
 
 # =========================
-# INPUT OPERAN
+# FORM INPUT
 # =========================
-st.subheader(f"📝 Input Operan - {selected_unit}")
+st.subheader(
+    f"📝 Input Operan - {selected_unit}"
+)
 
 with st.form("form_operan"):
 
     col1, col2 = st.columns(2)
 
     with col1:
-        tanggal = st.date_input("Tanggal")
+
+        tanggal = st.date_input(
+            "Tanggal"
+        )
 
         shift = st.selectbox(
             "Shift",
             ["Pagi", "Sore", "Malam"]
         )
 
-        no_rm = st.text_input("No RM")
+        no_rm = st.text_input(
+            "No RM"
+        )
 
-        nama_pasien = st.text_input("Nama Pasien")
+        nama_pasien = st.text_input(
+            "Nama Pasien"
+        )
 
     with col2:
-        kamar = st.text_input("Kamar / Bed")
 
-        diagnosa = st.text_input("Diagnosa")
+        kamar = st.text_input(
+            "Kamar / Bed"
+        )
+
+        diagnosa = st.text_input(
+            "Diagnosa"
+        )
 
     operan = st.text_area(
         "Operan Shift",
@@ -205,7 +234,7 @@ if submit:
         st.rerun()
 
 # =========================
-# DATA UNIT
+# DATA OPERAN PER UNIT
 # =========================
 st.subheader(
     f"📋 Data Operan - {selected_unit}"
@@ -241,5 +270,5 @@ st.dataframe(
 # TOTAL DATA
 # =========================
 st.caption(
-    f"Total data {selected_unit}: {len(unit_df)} pasien"
+    f"Total data {selected_unit}: {len(unit_df)}"
 )
