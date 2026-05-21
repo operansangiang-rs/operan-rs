@@ -1,9 +1,9 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from io import BytesIO
 from datetime import datetime
 import pytz
+from io import BytesIO
 
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
@@ -14,75 +14,60 @@ from reportlab.lib.pagesizes import landscape, A4
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Operan Shift RS",
+    page_title="SIMRS Operan",
     page_icon="🏥",
-    layout="wide"
+    layout="centered"
 )
 
 # =========================
-# DARK GRAY THEME
+# STYLE MOBILE APP
 # =========================
 st.markdown("""
 <style>
 
 .block-container {
+    padding: 1rem;
+    background: #111827;
+    color: white;
+}
+
+h1, h2, h3 {
+    color: white !important;
+}
+
+.card {
     background: #1f2937;
-    padding-top: 1rem;
-    color: #e5e7eb;
-}
-
-section[data-testid="stSidebar"] {
-    background: #111827 !important;
-}
-
-section[data-testid="stSidebar"] * {
-    color: #e5e7eb !important;
-}
-
-div[data-testid="stMetric"]{
-    background: #374151;
     padding: 12px;
     border-radius: 12px;
-    color: white;
+    margin-bottom: 10px;
+}
+
+.small {
+    font-size: 12px;
+    color: #9ca3af;
 }
 
 .stButton>button {
-    background: #6b7280;
+    width: 100%;
+    border-radius: 10px;
+    background: #374151;
     color: white;
-    border-radius: 8px;
+    padding: 10px;
 }
 
 .stButton>button:hover {
-    background: #9ca3af;
-    color: black;
+    background: #6b7280;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏥 Operan Shift RS Sari Asih Sangiang")
-
-# =========================
-# TIMEZONE
-# =========================
-jakarta = pytz.timezone("Asia/Jakarta")
-
 # =========================
 # DB
 # =========================
-@st.cache_resource
-def conn_db():
-    conn = sqlite3.connect("operan.db", check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    return conn
-
-conn = conn_db()
+conn = sqlite3.connect("operan.db", check_same_thread=False)
 c = conn.cursor()
 
-# =========================
-# TABLE
-# =========================
 c.execute("""
 CREATE TABLE IF NOT EXISTS operan (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,144 +86,101 @@ CREATE TABLE IF NOT EXISTS operan (
 """)
 conn.commit()
 
+jakarta = pytz.timezone("Asia/Jakarta")
+
 # =========================
-# UNIT
+# HEADER APP STYLE
 # =========================
-unit_list = [
-    "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
-    "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
-    "IGD","NICU","PICU"
-]
+st.markdown("# 🏥 SIMRS OPERAN")
+st.markdown("### Sistem Operan Shift Mobile")
 
-with st.sidebar:
-    st.title("🏥 Unit")
+# =========================
+# UNIT (FULL WIDTH DROPDOWN)
+# =========================
+unit_list = ["ICU","IGD","NICU","PICU","RPU LT 1","RPU LT 2","RPU LT 3 GL"]
 
-    selected_unit = st.selectbox(
-        "Pilih Unit",
-        unit_list,
-        key="unit_select"
-    )
+selected_unit = st.selectbox("🏥 Pilih Unit", unit_list)
 
-st.markdown(f"### 🏥 Unit Aktif: **{selected_unit}**")
+st.markdown(f"**Unit Aktif:** {selected_unit}")
 
 # =========================
 # SHIFT AUTO
 # =========================
 hour = datetime.now(jakarta).hour
-auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
+shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
-# INPUT FORM
+# INPUT CARD
 # =========================
-st.subheader("📝 Input Operan")
+st.markdown("## ➕ Input Operan")
 
 with st.container():
+    with st.form("form"):
+        no_rm = st.text_input("No RM")
+        nama = st.text_input("Nama Pasien")
+        kamar = st.text_input("Kamar")
+        diagnosa = st.text_input("Diagnosa")
+        pj = st.text_input("PJ Operan")
+        isi = st.text_area("Isi Operan", height=120)
 
-    col1, col2, col3 = st.columns(3)
+        submitted = st.form_submit_button("💾 SIMPAN OPERAN")
 
-    with col1:
-        st.text_input(
-            "Tanggal",
-            datetime.now(jakarta).strftime("%Y-%m-%d %H:%M"),
-            disabled=True,
-            key="tgl_show"
-        )
-        st.text_input(
-            "Shift",
-            auto_shift,
-            disabled=True,
-            key="shift_show"
-        )
-
-    with col2:
-        no_rm = st.text_input("No RM", key="no_rm_input")
-        nama_pasien = st.text_input("Nama Pasien", key="nama_input")
-
-    with col3:
-        kamar = st.text_input("Kamar", key="kamar_input")
-        diagnosa = st.text_input("Diagnosa", key="diag_input")
-        pj_operan = st.text_input("PJ Operan", key="pj_input")
-
-    operan = st.text_area("Isi Operan", height=140, key="operan_input")
-
-    if st.button("💾 Simpan Operan", use_container_width=True):
-
-        if no_rm and nama_pasien:
-
-            c.execute("""
-                INSERT INTO operan (
-                    tanggal, unit, shift, no_rm,
-                    nama_pasien, kamar, diagnosa,
-                    operan, pj_operan
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
-                selected_unit,
-                auto_shift,
-                no_rm,
-                nama_pasien,
-                kamar,
-                diagnosa,
-                operan,
-                pj_operan
-            ))
-
-            conn.commit()
-
-            # reset input aman
-            st.rerun()
+        if submitted:
+            if no_rm and nama:
+                c.execute("""
+                    INSERT INTO operan (
+                        tanggal, unit, shift, no_rm,
+                        nama_pasien, kamar, diagnosa,
+                        operan, pj_operan
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
+                    selected_unit, shift,
+                    no_rm, nama, kamar, diagnosa,
+                    isi, pj
+                ))
+                conn.commit()
+                st.success("Tersimpan")
+                st.rerun()
 
 # =========================
-# DATA LIST
+# DATA CARD LIST (ANDROID STYLE)
 # =========================
-st.subheader("📋 Data Operan")
+st.markdown("## 📋 Data Operan")
 
 df = pd.read_sql_query("""
 SELECT * FROM operan
-WHERE unit = ?
+WHERE unit=?
 ORDER BY id DESC
-LIMIT 50
+LIMIT 30
 """, conn, params=(selected_unit,))
 
 for _, r in df.iterrows():
 
     with st.container():
+        st.markdown(f"""
+        <div class="card">
+            <b>📅 {r['tanggal']}</b><br>
+            👤 {r['nama_pasien']} ({r['no_rm']})<br>
+            🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
+            👨‍⚕️ PJ: {r['pj_operan']}<br>
+            <span class="small">Shift: {r['shift']}</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-        col1, col2, col3, col4 = st.columns(4)
-
-        col1.write(f"📅 {r['tanggal']}")
-        col2.write(f"⏱ {r['shift']}")
-        col3.write(f"🆔 {r['no_rm']}")
-        col4.write(f"👤 {r['nama_pasien']}")
-
-        st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
-
-        with st.expander("📄 Detail Operan"):
-
+        with st.expander("🔎 Lihat Detail Operan"):
             st.write(r["operan"])
 
-            st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
-
-            colA, colB = st.columns(2)
-
-            if st.button("🗑 Hapus", key=f"del_{r['id']}"):
-                c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
-                conn.commit()
-                st.rerun()
-
 # =========================
-# EDIT
+# EDIT SIMPLE
 # =========================
-st.divider()
-st.subheader("✏️ Edit Operan")
+st.markdown("## ✏️ Edit Operan")
 
-edit_rm = st.text_input("No RM", key="edit_rm")
-edit_by = st.text_input("Nama Editor", key="edit_by")
-edit_text = st.text_area("Operan Baru", key="edit_text")
+edit_rm = st.text_input("No RM Edit")
+edit_text = st.text_area("Operan Baru")
 
-if st.button("Update Operan", key="btn_update"):
-
+if st.button("UPDATE"):
     now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
     c.execute("""
@@ -252,27 +194,26 @@ if st.button("Update Operan", key="btn_update"):
     if last:
         c.execute("""
             UPDATE operan
-            SET operan=?, edited_by=?, edited_at=?
+            SET operan=?, edited_at=?
             WHERE id=?
-        """, (edit_text, edit_by, now, last[0]))
+        """, (edit_text, now, last[0]))
 
         conn.commit()
+        st.success("Update sukses")
         st.rerun()
 
 # =========================
 # PDF
 # =========================
-st.divider()
-st.subheader("⬇️ Download PDF")
+st.markdown("## 📤 Download")
 
-start = st.date_input("Dari", key="start_pdf")
-end = st.date_input("Sampai", key="end_pdf")
+start = st.date_input("Dari")
+end = st.date_input("Sampai")
 
 pdf_df = pd.read_sql_query("""
 SELECT * FROM operan
 WHERE unit=?
 AND date(tanggal) BETWEEN date(?) AND date(?)
-ORDER BY tanggal DESC
 """, conn, params=(selected_unit, str(start), str(end)))
 
 def make_pdf(df):
@@ -280,7 +221,7 @@ def make_pdf(df):
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
     styles = getSampleStyleSheet()
 
-    elements = [Paragraph("OPERAN SHIFT RS", styles["Title"]), Spacer(1, 10)]
+    elements = [Paragraph("SIMRS OPERAN", styles["Title"]), Spacer(1, 10)]
 
     data = [df.columns.tolist()] + df.values.tolist()
 
@@ -301,7 +242,5 @@ if not pdf_df.empty:
     st.download_button(
         "⬇️ Download PDF",
         make_pdf(pdf_df),
-        "operan.pdf",
-        "application/pdf",
-        use_container_width=True
+        "simrs_operan.pdf"
     )
