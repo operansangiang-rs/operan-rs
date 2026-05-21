@@ -151,23 +151,39 @@ colC.metric("Shift Aktif", auto_shift)
 # =========================
 st.subheader("📋 Data Operan")
 
+df = pd.read_sql_query("""
+SELECT * FROM operan
+WHERE unit = ?
+ORDER BY id DESC
+LIMIT 100
+""", conn, params=(selected_unit,))
+
 for _, r in df.iterrows():
 
     with st.container(border=True):
 
         col1, col2, col3, col4 = st.columns(4)
 
-        col1.markdown(f"**📅 {r['tanggal']}**")
-        col2.markdown(f"**⏱ {r['shift']}**")
-        col3.markdown(f"**🆔 {r['no_rm']}**")
-        col4.markdown(f"**👤 {r['nama_pasien']}**")
+        col1.write(f"📅 {r['tanggal']}")
+        col2.write(f"⏱ {r['shift']}")
+        col3.write(f"🆔 {r['no_rm']}")
+        col4.write(f"👤 {r['nama_pasien']}")
 
-        st.caption(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ PJ: {r['pj_operan']}")
+        st.write(f"🏠 Kamar: {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ PJ: {r['pj_operan']}")
 
-        if st.button("📄 Lihat Detail", key=f"d_{r['id']}", use_container_width=True):
-            st.info("📝 DETAIL OPERAN")
-            st.write(r["operan"])
-            st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
+        # =========================
+        # DETAIL FIX (INI KUNCI)
+        # =========================
+        with st.expander("📄 Lihat Detail Operan"):
+            st.text_area(
+                "Isi Operan",
+                value=r["operan"] if r["operan"] else "-",
+                height=180,
+                disabled=True,
+                key=f"op_{r['id']}"
+            )
+
+            st.caption(f"✏️ Edit by: {r['edited_by']} | {r['edited_at']}")
 
 # =========================
 # EDIT TERAKHIR
