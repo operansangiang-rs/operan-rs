@@ -65,7 +65,9 @@ CREATE TABLE IF NOT EXISTS operan (
     kamar TEXT,
     diagnosa TEXT,
     operan TEXT,
-    pj_operan TEXT
+    pj_operan TEXT,
+    edited_by TEXT,
+    edited_at TEXT
 )
 """)
 
@@ -79,6 +81,30 @@ try:
     c.execute("""
     ALTER TABLE operan
     ADD COLUMN pj_operan TEXT
+    """)
+
+    conn.commit()
+
+except:
+    pass
+
+try:
+
+    c.execute("""
+    ALTER TABLE operan
+    ADD COLUMN edited_by TEXT
+    """)
+
+    conn.commit()
+
+except:
+    pass
+
+try:
+
+    c.execute("""
+    ALTER TABLE operan
+    ADD COLUMN edited_at TEXT
     """)
 
     conn.commit()
@@ -145,6 +171,7 @@ if search:
 
     query = """
     SELECT
+        id,
         tanggal,
         unit,
         shift,
@@ -153,7 +180,9 @@ if search:
         kamar,
         diagnosa,
         operan,
-        pj_operan
+        pj_operan,
+        edited_by,
+        edited_at
     FROM operan
     WHERE no_rm LIKE ?
     OR nama_pasien LIKE ?
@@ -298,6 +327,7 @@ st.subheader(
 
 query_unit = """
 SELECT
+    id,
     tanggal,
     shift,
     no_rm,
@@ -305,7 +335,9 @@ SELECT
     kamar,
     diagnosa,
     operan,
-    pj_operan
+    pj_operan,
+    edited_by,
+    edited_at
 FROM operan
 WHERE unit = ?
 ORDER BY id DESC
@@ -329,6 +361,60 @@ st.dataframe(
 st.caption(
     f"Total data {selected_unit}: {len(unit_df)}"
 )
+
+# =========================
+# EDIT OPERAN
+# =========================
+st.divider()
+
+st.subheader("✏️ Edit Operan")
+
+edit_id = st.number_input(
+    "Masukkan ID Data",
+    min_value=1,
+    step=1
+)
+
+edit_nama = st.text_input(
+    "Nama Pengedit"
+)
+
+edit_operan = st.text_area(
+    "Edit Operan Baru"
+)
+
+if st.button("💾 Update Operan"):
+
+    waktu_edit = datetime.now(
+        jakarta
+    ).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    c.execute(
+        """
+        UPDATE operan
+        SET
+            operan = ?,
+            edited_by = ?,
+            edited_at = ?
+        WHERE id = ?
+        """,
+        (
+            edit_operan,
+            edit_nama,
+            waktu_edit,
+            edit_id
+        )
+    )
+
+    conn.commit()
+
+    st.success(
+        "Operan berhasil diupdate"
+    )
+
+    st.rerun()
 
 # =========================
 # FILTER DOWNLOAD PDF
@@ -361,7 +447,9 @@ SELECT
     kamar,
     diagnosa,
     operan,
-    pj_operan
+    pj_operan,
+    edited_by,
+    edited_at
 FROM operan
 WHERE unit = ?
 AND date(tanggal) BETWEEN date(?) AND date(?)
@@ -445,50 +533,4 @@ else:
 
     st.info(
         "Tidak ada data pada rentang tanggal tersebut"
-    )
-
-# =========================
-# ADMIN DATABASE VIEWER
-# =========================
-st.divider()
-
-with st.expander("🗄️ Lihat Database"):
-
-    all_data = pd.read_sql_query(
-        """
-        SELECT *
-        FROM operan
-        ORDER BY id DESC
-        """,
-        conn
-    )
-
-    st.dataframe(
-        all_data,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.caption(
-        f"Total seluruh data: {len(all_data)}"
-    )
-
-# =========================
-# DOWNLOAD DATABASE
-# =========================
-try:
-
-    with open("operan.db", "rb") as file:
-
-        st.download_button(
-            label="⬇️ Download Database",
-            data=file,
-            file_name="operan.db",
-            mime="application/octet-stream"
-        )
-
-except Exception as e:
-
-    st.warning(
-        f"Gagal download database: {e}"
     )
