@@ -38,18 +38,27 @@ jakarta = pytz.timezone(
 # =========================
 # DATABASE
 # =========================
-conn = sqlite3.connect(
-    "operan.db",
-    check_same_thread=False
-)
+@st.cache_resource
+def get_connection():
+
+    conn = sqlite3.connect(
+        "operan.db",
+        check_same_thread=False
+    )
+
+    conn.execute(
+        "PRAGMA journal_mode=WAL;"
+    )
+
+    conn.execute(
+        "PRAGMA synchronous=NORMAL;"
+    )
+
+    return conn
+
+conn = get_connection()
 
 c = conn.cursor()
-
-# =========================
-# SQLITE OPTIMIZATION
-# =========================
-c.execute("PRAGMA journal_mode=WAL;")
-c.execute("PRAGMA synchronous=NORMAL;")
 
 # =========================
 # CREATE TABLE
@@ -119,7 +128,8 @@ try:
 
     c.execute("""
     DELETE FROM operan
-    WHERE datetime(tanggal) <= datetime('now', '-40 day')
+    WHERE datetime(tanggal)
+    <= datetime('now', '-40 day')
     """)
 
     conn.commit()
@@ -159,6 +169,37 @@ selected_unit = st.sidebar.selectbox(
 )
 
 # =========================
+# CACHE QUERY
+# =========================
+@st.cache_data(ttl=30)
+def load_unit_data(unit):
+
+    query = """
+    SELECT
+        id,
+        tanggal,
+        shift,
+        no_rm,
+        nama_pasien,
+        kamar,
+        diagnosa,
+        operan,
+        pj_operan,
+        edited_by,
+        edited_at
+    FROM operan
+    WHERE unit = ?
+    ORDER BY id DESC
+    LIMIT 100
+    """
+
+    return pd.read_sql_query(
+        query,
+        conn,
+        params=(unit,)
+    )
+
+# =========================
 # SEARCH GLOBAL
 # =========================
 st.subheader("🔎 Cari Pasien")
@@ -167,7 +208,7 @@ search = st.text_input(
     "Cari berdasarkan No RM atau Nama Pasien"
 )
 
-if search:
+if len(search) >= 3:
 
     query = """
     SELECT
@@ -187,6 +228,7 @@ if search:
     WHERE no_rm LIKE ?
     OR nama_pasien LIKE ?
     ORDER BY id DESC
+    LIMIT 50
     """
 
     df_search = pd.read_sql_query(
@@ -202,6 +244,12 @@ if search:
         df_search,
         use_container_width=True,
         hide_index=True
+    )
+
+elif search != "":
+
+    st.info(
+        "Minimal 3 karakter pencarian"
     )
 
 st.divider()
@@ -312,6 +360,8 @@ if submit:
 
         conn.commit()
 
+        load_unit_data.clear()
+
         st.success(
             "Operan berhasil disimpan"
         )
@@ -325,28 +375,8 @@ st.subheader(
     f"📋 Data Operan - {selected_unit}"
 )
 
-query_unit = """
-SELECT
-    id,
-    tanggal,
-    shift,
-    no_rm,
-    nama_pasien,
-    kamar,
-    diagnosa,
-    operan,
-    pj_operan,
-    edited_by,
-    edited_at
-FROM operan
-WHERE unit = ?
-ORDER BY id DESC
-"""
-
-unit_df = pd.read_sql_query(
-    query_unit,
-    conn,
-    params=(selected_unit,)
+unit_df = load_unit_data(
+    selected_unit
 )
 
 st.dataframe(
@@ -359,7 +389,7 @@ st.dataframe(
 # TOTAL DATA
 # =========================
 st.caption(
-    f"Total data {selected_unit}: {len(unit_df)}"
+    f"Menampilkan {len(unit_df)} data terbaru"
 )
 
 # =========================
@@ -408,6 +438,8 @@ if st.button("💾 Update Operan"):
 
     conn.commit()
 
+    load_unit_data.clear()
+
     st.success(
         "Operan berhasil diupdate"
     )
@@ -450,7 +482,8 @@ SELECT
     edited_at
 FROM operan
 WHERE unit = ?
-AND date(tanggal) BETWEEN date(?) AND date(?)
+AND date(tanggal)
+BETWEEN date(?) AND date(?)
 ORDER BY tanggal DESC
 """
 
@@ -486,21 +519,53 @@ def generate_pdf(dataframe):
     )
 
     elements.append(title)
-    elements.append(Spacer(1, 12))
 
-    data = [list(dataframe.columns)]
+    elements.append(
+        Spacer(1, 12)
+    )
+
+    data = [
+        list(dataframe.columns)
+    ]
 
     for row in dataframe.values.tolist():
+
         data.append(row)
 
     table = Table(data)
 
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        (
+            'BACKGROUND',
+            (0, 0),
+            (-1, 0),
+            colors.grey
+        ),
+        (
+            'TEXTCOLOR',
+            (0, 0),
+            (-1, 0),
+            colors.whitesmoke
+        ),
+        (
+            'GRID',
+            (0, 0),
+            (-1, -1),
+            1,
+            colors.black
+        ),
+        (
+            'FONTNAME',
+            (0, 0),
+            (-1, 0),
+            'Helvetica-Bold'
+        ),
+        (
+            'FONTSIZE',
+            (0, 0),
+            (-1, -1),
+            8
+        ),
     ]))
 
     elements.append(table)
@@ -518,7 +583,9 @@ def generate_pdf(dataframe):
 # =========================
 if not pdf_df.empty:
 
-    pdf_file = generate_pdf(pdf_df)
+    pdf_file = generate_pdf(
+        pdf_df
+    )
 
     st.download_button(
         label="⬇️ Download PDF",
