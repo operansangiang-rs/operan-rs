@@ -6,7 +6,7 @@ import pandas as pd
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Operan Shift RS",
+    page_title="Operan Shift RS Sari Asih Sangiang",
     page_icon="🏥",
     layout="wide"
 )
