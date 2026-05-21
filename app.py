@@ -179,9 +179,15 @@ with st.form("form_operan"):
 
     with col1:
 
-        tanggal = pd.Timestamp.now().strftime(
+      tanggal = pd.Timestamp.now().strftime(
     "%Y-%m-%d %H:%M:%S"
-        
+    )
+    
+    st.text_input(
+        "Tanggal Input",
+        value=tanggal,
+        disabled=True
+    )
         )
 
         shift = st.selectbox(
