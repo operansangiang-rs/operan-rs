@@ -61,6 +61,21 @@ CREATE TABLE IF NOT EXISTS operan (
 conn.commit()
 
 # =========================
+# UPDATE DATABASE LAMA
+# =========================
+try:
+
+    c.execute("""
+    ALTER TABLE operan
+    ADD COLUMN pj_operan TEXT
+    """)
+
+    conn.commit()
+
+except:
+    pass
+
+# =========================
 # AUTO DELETE > 40 HARI
 # =========================
 try:
@@ -315,9 +330,6 @@ with col2:
         "Sampai Tanggal"
     )
 
-# =========================
-# QUERY PDF
-# =========================
 pdf_query = """
 SELECT
     tanggal,
