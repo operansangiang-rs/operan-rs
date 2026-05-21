@@ -110,7 +110,16 @@ unit_list = [
     "IGD","NICU","PICU"
 ]
 
-selected_unit = st.sidebar.selectbox("🏥 Unit", unit_list)
+with st.sidebar:
+    st.title("🏥 Unit")
+
+    selected_unit = st.selectbox(
+        "Pilih Unit",
+        unit_list,
+        key="unit_select"
+    )
+
+st.markdown(f"### 🏥 Unit Aktif: **{selected_unit}**")
 
 # =========================
 # SHIFT AUTO
