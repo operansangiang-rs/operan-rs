@@ -43,7 +43,7 @@ h1,h2,h3 {color:white !important;}
 st.title("🏥 SIMRS OPERAN MOBILE")
 
 # =========================
-# DB
+# DB CONNECTION
 # =========================
 conn = sqlite3.connect("operan.db", check_same_thread=False)
 c = conn.cursor()
@@ -66,12 +66,30 @@ CREATE TABLE IF NOT EXISTS operan (
 """)
 conn.commit()
 
+# =========================
+# AUTO DELETE > 40 HARI (AKTIF)
+# =========================
+try:
+    c.execute("""
+        DELETE FROM operan
+        WHERE julianday('now') - julianday(tanggal) > 40
+    """)
+    conn.commit()
+except Exception as e:
+    print("Auto delete error:", e)
+
+# =========================
+# TIMEZONE
+# =========================
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
 # UNIT
 # =========================
-unit_list = ["ICU","IGD","NICU","PICU","RPU LT 1","RPU LT 2","RPU LT 3"]
+unit_list = [
+    "ICU","IGD","NICU","PICU",
+    "RPU LT 1","RPU LT 2","RPU LT 3 GL"
+]
 
 selected_unit = st.selectbox("🏥 Pilih Unit", unit_list)
 
@@ -89,12 +107,13 @@ shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 st.markdown("## ➕ Input Operan")
 
 with st.form("form_input"):
-    no_rm = st.text_input("No RM", key="in_rm")
-    nama = st.text_input("Nama Pasien", key="in_nama")
-    kamar = st.text_input("Kamar", key="in_kamar")
-    diagnosa = st.text_input("Diagnosa", key="in_diag")
-    pj = st.text_input("PJ Operan", key="in_pj")
-    isi = st.text_area("Isi Operan", key="in_isi")
+
+    no_rm = st.text_input("No RM")
+    nama = st.text_input("Nama Pasien")
+    kamar = st.text_input("Kamar")
+    diagnosa = st.text_input("Diagnosa")
+    pj = st.text_input("PJ Operan")
+    isi = st.text_area("Isi Operan")
 
     submit = st.form_submit_button("💾 SIMPAN")
 
@@ -119,15 +138,14 @@ with st.form("form_input"):
                 pj
             ))
             conn.commit()
-            st.success("Tersimpan")
             st.rerun()
 
 # =========================
-# SEARCH RM (FIX YANG KAMU MAU)
+# SEARCH RM
 # =========================
 st.markdown("## 🔎 Cari RM / Nama")
 
-search = st.text_input("Cari Pasien", key="search_box")
+search = st.text_input("Cari Pasien")
 
 if search:
 
@@ -143,9 +161,9 @@ if search:
 
         st.markdown(f"""
         <div class="card">
-            👤 <b>{r['nama_pasien']}</b> ({r['no_rm']})<br>
-            🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
-            📅 {r['tanggal']}
+        👤 <b>{r['nama_pasien']}</b> ({r['no_rm']})<br>
+        🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
+        📅 {r['tanggal']}
         </div>
         """, unsafe_allow_html=True)
 
@@ -153,7 +171,7 @@ if search:
             st.write(r["operan"])
 
 # =========================
-# DATA LIST (MOBILE CARD)
+# DATA LIST
 # =========================
 st.markdown("## 📋 Data Operan")
 
@@ -166,30 +184,29 @@ LIMIT 30
 
 for _, r in df.iterrows():
 
-    with st.container():
+    st.markdown(f"""
+    <div class="card">
+    📅 {r['tanggal']}<br>
+    👤 {r['nama_pasien']} ({r['no_rm']})<br>
+    🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
+    👨‍⚕️ PJ: {r['pj_operan']}<br>
+    <small>Shift: {r['shift']}</small>
+    </div>
+    """, unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div class="card">
-        📅 {r['tanggal']}<br>
-        👤 {r['nama_pasien']} ({r['no_rm']})<br>
-        🏠 {r['kamar']} | 🧾 {r['diagnosa']}<br>
-        👨‍⚕️ PJ: {r['pj_operan']}<br>
-        <small>Shift: {r['shift']}</small>
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.expander("📄 Detail Operan"):
-            st.write(r["operan"])
+    with st.expander("📄 Detail Operan"):
+        st.write(r["operan"])
 
 # =========================
 # EDIT TERAKHIR
 # =========================
 st.markdown("## ✏️ Edit Operan")
 
-edit_rm = st.text_input("No RM Edit", key="edit_rm")
-edit_text = st.text_area("Operan Baru", key="edit_text")
+edit_rm = st.text_input("No RM Edit")
+edit_text = st.text_area("Operan Baru")
 
 if st.button("UPDATE"):
+
     now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
     c.execute("""
@@ -208,7 +225,6 @@ if st.button("UPDATE"):
         """, (edit_text, now, last[0]))
 
         conn.commit()
-        st.success("Updated")
         st.rerun()
 
 # =========================
@@ -252,5 +268,5 @@ if not pdf_df.empty:
     st.download_button(
         "⬇️ Download PDF",
         make_pdf(pdf_df),
-        "operan.pdf"
+        "simrs_operan.pdf"
     )
