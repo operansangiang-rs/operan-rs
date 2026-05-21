@@ -19,13 +19,6 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown("""
-<style>
-.main {background-color: #f5f7fb;}
-.block-container {padding-top: 2rem;}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 
 # =========================
@@ -70,9 +63,11 @@ conn.commit()
 # =========================
 # UNIT
 # =========================
-unit_list = ["ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
-             "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
-             "IGD","NICU","PICU"]
+unit_list = [
+    "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
+    "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
+    "IGD","NICU","PICU"
+]
 
 selected_unit = st.sidebar.selectbox("🏥 Unit", unit_list)
 
@@ -81,12 +76,6 @@ selected_unit = st.sidebar.selectbox("🏥 Unit", unit_list)
 # =========================
 hour = datetime.now(jakarta).hour
 auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
-
-# =========================
-# SESSION RESET KEY (INI KUNCI BIAR INPUT HILANG)
-# =========================
-if "reset_form" not in st.session_state:
-    st.session_state.reset_form = False
 
 # =========================
 # FORM INPUT
@@ -101,13 +90,17 @@ with st.container(border=True):
         st.text_input("Tanggal", value=datetime.now(jakarta).strftime("%Y-%m-%d %H:%M"), disabled=True)
 
     with col2:
-        no_rm = st.text_input("No RM", key="no_rm")
-        nama_pasien = st.text_input("Nama Pasien", key="nama_pasien")
+        st.text_input("Shift", value=auto_shift, disabled=True)
 
-    with col3:
-        kamar = st.text_input("Kamar", key="kamar")
-        diagnosa = st.text_input("Diagnosa", key="diagnosa")
-        pj_operan = st.text_input("PJ Operan", key="pj_operan")
+    # =========================
+    # INPUT KEY WAJIB (FIX RESET)
+    # =========================
+    no_rm = st.text_input("No RM", key="no_rm")
+    nama_pasien = st.text_input("Nama Pasien", key="nama_pasien")
+
+    kamar = st.text_input("Kamar", key="kamar")
+    diagnosa = st.text_input("Diagnosa", key="diagnosa")
+    pj_operan = st.text_input("PJ Operan", key="pj_operan")
 
     operan = st.text_area("Isi Operan", height=140, key="operan")
 
@@ -123,27 +116,28 @@ with st.container(border=True):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
-                selected_unit, auto_shift,
-                no_rm, nama_pasien, kamar,
-                diagnosa, operan, pj_operan
+                selected_unit,
+                auto_shift,
+                no_rm,
+                nama_pasien,
+                kamar,
+                diagnosa,
+                operan,
+                pj_operan
             ))
 
             conn.commit()
 
             # =========================
-            # RESET INPUT (INI YANG FIX INPUT TIDAK HILANG)
+            # RESET AMAN (TIDAK ERROR)
             # =========================
-            st.session_state.no_rm = ""
-            st.session_state.nama_pasien = ""
-            st.session_state.kamar = ""
-            st.session_state.diagnosa = ""
-            st.session_state.pj_operan = ""
-            st.session_state.operan = ""
+            for k in ["no_rm","nama_pasien","kamar","diagnosa","pj_operan","operan"]:
+                st.session_state[k] = ""
 
             st.rerun()
 
 # =========================
-# LOAD DATA
+# DATA
 # =========================
 df = pd.read_sql_query("""
 SELECT * FROM operan
@@ -152,17 +146,6 @@ ORDER BY id DESC
 LIMIT 100
 """, conn, params=(selected_unit,))
 
-# =========================
-# METRIC
-# =========================
-colA, colB, colC = st.columns(3)
-colA.metric("Total Operan", len(df))
-colB.metric("Unit", selected_unit)
-colC.metric("Shift", auto_shift)
-
-# =========================
-# DATA LIST + DETAIL
-# =========================
 st.subheader("📋 Data Operan")
 
 for _, r in df.iterrows():
@@ -176,21 +159,21 @@ for _, r in df.iterrows():
         col3.write(f"🆔 {r['no_rm']}")
         col4.write(f"👤 {r['nama_pasien']}")
 
-        st.write(f"🏠 Kamar: {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ PJ: {r['pj_operan']}")
+        st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
         with st.expander("📄 Detail Operan"):
             st.text_area(
-                "Isi Operan",
-                value=r["operan"] if r["operan"] else "-",
+                "Isi",
+                value=r["operan"],
                 height=180,
                 disabled=True,
-                key=f"op_{r['id']}"
+                key=f"detail_{r['id']}"
             )
 
-            st.caption(f"✏️ Edit by: {r['edited_by']} | {r['edited_at']}")
+            st.caption(f"Edit by: {r['edited_by']} | {r['edited_at']}")
 
 # =========================
-# EDIT TERAKHIR
+# EDIT
 # =========================
 st.divider()
 st.subheader("✏️ Edit Operan Terakhir")
@@ -222,7 +205,7 @@ if st.button("Update Operan"):
         st.rerun()
 
 # =========================
-# PDF DOWNLOAD
+# PDF
 # =========================
 st.divider()
 st.subheader("⬇️ Download PDF")
@@ -242,7 +225,10 @@ def make_pdf(df):
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
     styles = getSampleStyleSheet()
 
-    elements = [Paragraph("OPERAN SHIFT", styles["Title"]), Spacer(1, 12)]
+    elements = [
+        Paragraph("OPERAN SHIFT", styles["Title"]),
+        Spacer(1, 12)
+    ]
 
     data = [df.columns.tolist()] + df.values.tolist()
 
