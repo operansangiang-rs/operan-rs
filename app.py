@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🏥 Operan Shift Rumah Sakit")
+st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 
 # =========================
 # DATABASE
