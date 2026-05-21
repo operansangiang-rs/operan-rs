@@ -169,6 +169,25 @@ selected_unit = st.sidebar.selectbox(
 )
 
 # =========================
+# AUTO SHIFT BERDASARKAN JAM
+# =========================
+jam_sekarang = datetime.now(
+    jakarta
+).hour
+
+if jam_sekarang >= 7 and jam_sekarang < 14:
+
+    auto_shift = "Pagi"
+
+elif jam_sekarang >= 14 and jam_sekarang < 21:
+
+    auto_shift = "Sore"
+
+else:
+
+    auto_shift = "Malam"
+
+# =========================
 # CACHE QUERY
 # =========================
 @st.cache_data(ttl=30)
@@ -279,10 +298,13 @@ with st.form("form_operan"):
             disabled=True
         )
 
-        shift = st.selectbox(
+        st.text_input(
             "Shift",
-            ["Pagi", "Sore", "Malam"]
+            value=auto_shift,
+            disabled=True
         )
+
+        shift = auto_shift
 
         no_rm = st.text_input(
             "No RM"
