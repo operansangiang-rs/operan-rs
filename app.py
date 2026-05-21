@@ -11,7 +11,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import landscape, A4
 
 # =========================
-# CONFIG UI
+# CONFIG
 # =========================
 st.set_page_config(
     page_title="Operan Shift RS",
@@ -20,40 +20,59 @@ st.set_page_config(
 )
 
 # =========================
-# SOFT GRAY THEME
+# DARK GRAY THEME (FIX)
 # =========================
 st.markdown("""
 <style>
 
+/* background utama abu tua */
 .block-container {
-    background: #f3f4f6;
+    background: #1f2937;
     padding-top: 1rem;
+    color: white;
 }
 
+/* sidebar lebih gelap */
 section[data-testid="stSidebar"] {
-    background: #e5e7eb !important;
+    background: #111827 !important;
 }
 
 section[data-testid="stSidebar"] * {
-    color: #111827 !important;
+    color: #e5e7eb !important;
 }
 
+/* card data */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #374151;
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+/* metric */
 div[data-testid="stMetric"]{
-    background: #ffffff;
+    background: #374151;
+    color: white;
     padding: 12px;
     border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
 }
 
+/* text color */
+html, body, [class*="css"]  {
+    color: #e5e7eb;
+}
+
+/* button */
 .stButton>button {
     background: #6b7280;
     color: white;
     border-radius: 8px;
+    border: none;
 }
 
 .stButton>button:hover {
-    background: #4b5563;
-    color: white;
+    background: #9ca3af;
+    color: black;
 }
 
 </style>
@@ -67,7 +86,7 @@ st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
-# DATABASE
+# DB
 # =========================
 @st.cache_resource
 def conn_db():
@@ -103,9 +122,11 @@ conn.commit()
 # =========================
 # UNIT
 # =========================
-unit_list = ["ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
-             "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
-             "IGD","NICU","PICU"]
+unit_list = [
+    "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
+    "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
+    "IGD","NICU","PICU"
+]
 
 selected_unit = st.sidebar.selectbox("🏥 Unit", unit_list)
 
@@ -116,11 +137,11 @@ hour = datetime.now(jakarta).hour
 auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
-# INPUT FORM
+# INPUT
 # =========================
 st.subheader("📝 Input Operan")
 
-with st.container(border=True):
+with st.container():
 
     col1, col2, col3 = st.columns(3)
 
@@ -161,7 +182,7 @@ with st.container(border=True):
             st.rerun()
 
 # =========================
-# DATA LIST
+# DATA
 # =========================
 st.subheader("📋 Data Operan")
 
@@ -174,7 +195,7 @@ LIMIT 50
 
 for _, r in df.iterrows():
 
-    with st.container(border=True):
+    with st.container():
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -185,9 +206,7 @@ for _, r in df.iterrows():
 
         st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
-        # =========================
-        # DETAIL + DELETE
-        # =========================
+        # DETAIL
         with st.expander("📄 Detail Operan"):
 
             st.write(r["operan"])
@@ -196,19 +215,18 @@ for _, r in df.iterrows():
 
             colA, colB = st.columns(2)
 
-            # DELETE BUTTON
+            # DELETE
             with colA:
-                if st.button(f"🗑 Hapus {r['id']}", key=f"del_{r['id']}"):
-
-                    c.execute("DELETE FROM operan WHERE id = ?", (r["id"],))
+                if st.button("🗑 Hapus", key=f"del_{r['id']}"):
+                    c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
                     conn.commit()
                     st.rerun()
 
             with colB:
-                st.info("Hapus permanen data ini")
+                st.info("Hapus permanen")
 
 # =========================
-# EDIT TERAKHIR
+# EDIT
 # =========================
 st.divider()
 st.subheader("✏️ Edit Operan")
@@ -223,7 +241,7 @@ if st.button("Update Operan"):
 
     c.execute("""
         SELECT id FROM operan
-        WHERE no_rm = ?
+        WHERE no_rm=?
         ORDER BY id DESC LIMIT 1
     """, (edit_rm,))
 
@@ -232,15 +250,15 @@ if st.button("Update Operan"):
     if last:
         c.execute("""
             UPDATE operan
-            SET operan = ?, edited_by = ?, edited_at = ?
-            WHERE id = ?
+            SET operan=?, edited_by=?, edited_at=?
+            WHERE id=?
         """, (edit_text, edit_by, now, last[0]))
 
         conn.commit()
         st.rerun()
 
 # =========================
-# PDF DOWNLOAD
+# PDF
 # =========================
 st.divider()
 st.subheader("⬇️ Download PDF")
@@ -250,7 +268,7 @@ end = st.date_input("Sampai")
 
 pdf_df = pd.read_sql_query("""
 SELECT * FROM operan
-WHERE unit = ?
+WHERE unit=?
 AND date(tanggal) BETWEEN date(?) AND date(?)
 ORDER BY tanggal DESC
 """, conn, params=(selected_unit, str(start), str(end)))
