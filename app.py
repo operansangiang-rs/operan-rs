@@ -11,7 +11,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import landscape, A4
 
 # =========================
-# CONFIG
+# CONFIG UI
 # =========================
 st.set_page_config(
     page_title="Operan Shift RS",
@@ -22,14 +22,27 @@ st.set_page_config(
 st.markdown("""
 <style>
 .block-container {padding-top: 1.5rem;}
+
+section[data-testid="stSidebar"] {
+    background: #eef2f7 !important;
+}
+
+[data-testid="stSidebar"] * {
+    background: transparent !important;
+}
+
 div[data-testid="stMetric"]{
     background:white;
     padding:12px;
     border-radius:12px;
-    box-shadow:0 2px 10px rgba(0,0,0,0.05);
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
-section[data-testid="stSidebar"] {
-    background:#f4f6fb;
+
+.card {
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -73,7 +86,7 @@ CREATE TABLE IF NOT EXISTS operan (
 conn.commit()
 
 # =========================
-# SIDEBAR UNIT
+# UNIT (SIDEBAR FIX STYLE)
 # =========================
 unit_list = [
     "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
@@ -81,7 +94,8 @@ unit_list = [
     "IGD","NICU","PICU"
 ]
 
-selected_unit = st.sidebar.selectbox("🏥 Pilih Unit", unit_list)
+st.sidebar.markdown("### 🏥 Unit")
+selected_unit = st.sidebar.radio("", unit_list)
 
 # =========================
 # SHIFT AUTO
@@ -90,7 +104,7 @@ hour = datetime.now(jakarta).hour
 auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
-# METRIC TOP
+# METRIC
 # =========================
 df_count = pd.read_sql_query(
     "SELECT COUNT(*) as total FROM operan WHERE unit=?",
@@ -101,12 +115,12 @@ df_count = pd.read_sql_query(
 c1, c2, c3 = st.columns(3)
 c1.metric("Total Operan", int(df_count["total"].iloc[0]))
 c2.metric("Unit", selected_unit)
-c3.metric("Shift Aktif", auto_shift)
+c3.metric("Shift", auto_shift)
 
 st.divider()
 
 # =========================
-# FORM INPUT (CLEAN CARD)
+# INPUT FORM
 # =========================
 st.subheader("📝 Input Operan")
 
@@ -157,7 +171,6 @@ with st.container(border=True):
 
             conn.commit()
 
-            # reset input
             for k in ["no_rm","nama_pasien","kamar","diagnosa","pj_operan","operan"]:
                 st.session_state[k] = ""
 
@@ -166,7 +179,7 @@ with st.container(border=True):
 st.divider()
 
 # =========================
-# DATA LIST (CARD STYLE CLEAN)
+# DATA LIST
 # =========================
 st.subheader("📋 Data Operan")
 
@@ -181,57 +194,64 @@ for _, r in df.iterrows():
 
     with st.container(border=True):
 
-        c1, c2, c3, c4 = st.columns([2,1,1,2])
+        col1, col2, col3, col4 = st.columns([2,1,1,2])
 
-        c1.markdown(f"📅 **{r['tanggal']}**")
-        c2.markdown(f"⏱ {r['shift']}")
-        c3.markdown(f"🆔 {r['no_rm']}")
-        c4.markdown(f"👤 {r['nama_pasien']}")
+        col1.write(f"📅 **{r['tanggal']}**")
+        col2.write(f"⏱ {r['shift']}")
+        col3.write(f"🆔 {r['no_rm']}")
+        col4.write(f"👤 {r['nama_pasien']}")
 
         st.caption(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ PJ: {r['pj_operan']}")
 
         with st.expander("📄 Detail Operan"):
             st.write(r["operan"])
-
             st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
 
 st.divider()
 
 # =========================
-# EDIT
+# EDIT (FIX LAYOUT)
 # =========================
 st.subheader("✏️ Edit Operan Terakhir")
 
-edit_rm = st.text_input("No RM Edit")
-edit_by = st.text_input("Nama Editor")
-edit_text = st.text_area("Operan Baru")
+with st.container(border=True):
 
-if st.button("Update Operan"):
+    col1, col2 = st.columns(2)
 
-    now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
+    with col1:
+        edit_rm = st.text_input("No RM Edit")
 
-    c.execute("""
-        SELECT id FROM operan
-        WHERE no_rm=?
-        ORDER BY id DESC LIMIT 1
-    """, (edit_rm,))
+    with col2:
+        edit_by = st.text_input("Nama Editor")
 
-    last = c.fetchone()
+    edit_text = st.text_area("Isi Operan Baru", height=120)
 
-    if last:
+    if st.button("💾 Update Operan", use_container_width=True):
+
+        now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
+
         c.execute("""
-            UPDATE operan
-            SET operan=?, edited_by=?, edited_at=?
-            WHERE id=?
-        """, (edit_text, edit_by, now, last[0]))
+            SELECT id FROM operan
+            WHERE no_rm=?
+            ORDER BY id DESC LIMIT 1
+        """, (edit_rm,))
 
-        conn.commit()
-        st.rerun()
+        last = c.fetchone()
+
+        if last:
+            c.execute("""
+                UPDATE operan
+                SET operan=?, edited_by=?, edited_at=?
+                WHERE id=?
+            """, (edit_text, edit_by, now, last[0]))
+
+            conn.commit()
+            st.rerun()
 
 st.divider()
 
 # =========================
-# PDF DOWNLOAD
+# PDF
 # =========================
 st.subheader("⬇️ Download PDF")
 
@@ -250,7 +270,10 @@ def make_pdf(df):
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
     styles = getSampleStyleSheet()
 
-    elements = [Paragraph("OPERAN SHIFT", styles["Title"]), Spacer(1, 12)]
+    elements = [
+        Paragraph("OPERAN SHIFT", styles["Title"]),
+        Spacer(1, 12)
+    ]
 
     data = [df.columns.tolist()] + df.values.tolist()
 
