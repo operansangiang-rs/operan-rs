@@ -21,7 +21,7 @@ from reportlab.lib.pagesizes import landscape, A4
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Operan Shift RS Sari Asih Sangiang",
+    page_title="Operan Shift RS",
     page_icon="🏥",
     layout="wide"
 )
@@ -34,7 +34,7 @@ st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
-# DB
+# DATABASE
 # =========================
 @st.cache_resource
 def get_conn():
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS operan (
 conn.commit()
 
 # =========================
-# AUTO SHIFT
+# SHIFT AUTO
 # =========================
 jam = datetime.now(jakarta).hour
 
@@ -78,12 +78,6 @@ elif jam < 21:
     auto_shift = "Sore"
 else:
     auto_shift = "Malam"
-
-# =========================
-# RESET FORM FLAG
-# =========================
-if "reset_form" not in st.session_state:
-    st.session_state.reset_form = False
 
 # =========================
 # UNIT
@@ -103,7 +97,7 @@ selected_unit = st.sidebar.selectbox("Unit", unit_list)
 @st.cache_data(ttl=10)
 def load_data(unit):
 
-    df = pd.read_sql_query("""
+    return pd.read_sql_query("""
         SELECT
             id,
             tanggal,
@@ -114,15 +108,13 @@ def load_data(unit):
             diagnosa,
             operan,
             pj_operan,
-            COALESCE(edited_by,'-') AS edited_by,
-            COALESCE(edited_at,'-') AS edited_at
+            CASE WHEN edited_by IS NULL OR edited_by = '' THEN '-' ELSE edited_by END AS edited_by,
+            CASE WHEN edited_at IS NULL OR edited_at = '' THEN '-' ELSE edited_at END AS edited_at
         FROM operan
         WHERE unit = ?
         ORDER BY id DESC
         LIMIT 100
-    """, conn, params=(unit,))
-
-    return df.fillna("-")
+    """, conn, params=(unit,)).fillna("-")
 
 # =========================
 # SEARCH
@@ -156,19 +148,15 @@ with st.form("form_operan"):
     col1, col2 = st.columns(2)
 
     with col1:
-
         tanggal = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
         st.text_input("Tanggal", value=tanggal, disabled=True)
         st.text_input("Shift", value=auto_shift, disabled=True)
 
-        shift = auto_shift
-
         no_rm = st.text_input("No RM")
         nama_pasien = st.text_input("Nama Pasien")
 
     with col2:
-
         kamar = st.text_input("Kamar")
         diagnosa = st.text_input("Diagnosa")
         pj_operan = st.text_input("PJ Operan")
@@ -193,23 +181,20 @@ if submit:
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            tanggal, selected_unit, shift,
+            tanggal, selected_unit, auto_shift,
             no_rm, nama_pasien,
             kamar, diagnosa,
             operan, pj_operan
         ))
 
         conn.commit()
-
         load_data.clear()
-
-        st.session_state.reset_form = True
 
         st.success("Tersimpan")
         st.rerun()
 
 # =========================
-# LIST DATA + DETAIL + DELETE
+# LIST DATA
 # =========================
 st.subheader(f"📋 Data Operan - {selected_unit}")
 
@@ -238,23 +223,18 @@ for _, row in df.iterrows():
         st.caption(f"✏️ Edit: {row['edited_by']} | {row['edited_at']}")
 
     with c6:
-        if st.button("📄 Detail", key=f"d_{row['id']}"):
-
+        if st.button("📄 Detail", key=f"det_{row['id']}"):
             st.session_state["detail"] = row.to_dict()
 
     with c7:
         if st.button("🗑 Hapus", key=f"del_{row['id']}"):
-
             c.execute("DELETE FROM operan WHERE id = ?", (row["id"],))
             conn.commit()
-
             load_data.clear()
-
-            st.warning("Terhapus")
             st.rerun()
 
 # =========================
-# DETAIL VIEW
+# DETAIL
 # =========================
 if "detail" in st.session_state:
 
@@ -275,7 +255,7 @@ if "detail" in st.session_state:
 st.divider()
 st.subheader("✏️ Edit Operan")
 
-edit_rm = st.text_input("No RM")
+edit_id = st.text_input("ID Operan")
 edit_by = st.text_input("Nama Pengedit")
 edit_text = st.text_area("Operan Baru")
 
@@ -286,12 +266,82 @@ if st.button("Update"):
     c.execute("""
         UPDATE operan
         SET operan = ?, edited_by = ?, edited_at = ?
-        WHERE no_rm = ?
-    """, (edit_text, edit_by, waktu, edit_rm))
+        WHERE id = ?
+    """, (edit_text, edit_by, waktu, edit_id))
 
     conn.commit()
-
     load_data.clear()
 
     st.success("Updated")
     st.rerun()
+
+# =========================
+# DOWNLOAD PDF
+# =========================
+st.divider()
+st.subheader("⬇️ Download PDF Operan")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    start_date = st.date_input("Dari Tanggal")
+
+with col2:
+    end_date = st.date_input("Sampai Tanggal")
+
+pdf_df = pd.read_sql_query("""
+    SELECT
+        tanggal, unit, shift,
+        no_rm, nama_pasien,
+        kamar, diagnosa,
+        operan, pj_operan,
+        edited_by, edited_at
+    FROM operan
+    WHERE unit = ?
+    AND date(tanggal) BETWEEN date(?) AND date(?)
+    ORDER BY id DESC
+""", conn, params=(selected_unit, str(start_date), str(end_date)))
+
+def generate_pdf(df):
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+    styles = getSampleStyleSheet()
+
+    elements = []
+    elements.append(Paragraph("Operan Shift RS", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    data = [list(df.columns)]
+
+    for r in df.values.tolist():
+        data.append(r)
+
+    table = Table(data)
+
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.grey),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONT_SIZE', (0,0), (-1,-1), 8),
+    ]))
+
+    elements.append(table)
+    doc.build(elements)
+
+    return buffer.getvalue()
+
+if not pdf_df.empty:
+
+    pdf = generate_pdf(pdf_df)
+
+    st.download_button(
+        "⬇️ Download PDF",
+        pdf,
+        file_name="operan.pdf",
+        mime="application/pdf"
+    )
+
+else:
+    st.info("Tidak ada data")
