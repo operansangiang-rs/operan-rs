@@ -1,6 +1,17 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+from io import BytesIO
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer
+)
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import landscape, A4
 
 # =========================
 # CONFIG
@@ -24,7 +35,7 @@ conn = sqlite3.connect(
 c = conn.cursor()
 
 # =========================
-# OPTIMASI SQLITE
+# SQLITE OPTIMIZATION
 # =========================
 c.execute("PRAGMA journal_mode=WAL;")
 c.execute("PRAGMA synchronous=NORMAL;")
@@ -42,7 +53,8 @@ CREATE TABLE IF NOT EXISTS operan (
     nama_pasien TEXT,
     kamar TEXT,
     diagnosa TEXT,
-    operan TEXT
+    operan TEXT,
+    pj_operan TEXT
 )
 """)
 
@@ -67,7 +79,7 @@ except Exception as e:
     )
 
 # =========================
-# LIST UNIT
+# UNIT LIST
 # =========================
 unit_list = [
     "ICU",
@@ -114,7 +126,8 @@ if search:
         nama_pasien,
         kamar,
         diagnosa,
-        operan
+        operan,
+        pj_operan
     FROM operan
     WHERE no_rm LIKE ?
     OR nama_pasien LIKE ?
@@ -178,9 +191,15 @@ with st.form("form_operan"):
             "Diagnosa"
         )
 
+        pj_operan = st.text_input(
+            "PJ Operan / Perawat"
+        )
+
     operan = st.text_area(
         "Operan Shift",
-        height=150
+        height=150,
+        max_chars=1500,
+        placeholder="Maksimal 1500 karakter"
     )
 
     submit = st.form_submit_button(
@@ -210,9 +229,10 @@ if submit:
                 nama_pasien,
                 kamar,
                 diagnosa,
-                operan
+                operan,
+                pj_operan
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(tanggal),
@@ -222,7 +242,8 @@ if submit:
                 nama_pasien,
                 kamar,
                 diagnosa,
-                operan
+                operan,
+                pj_operan
             )
         )
 
@@ -249,7 +270,8 @@ SELECT
     nama_pasien,
     kamar,
     diagnosa,
-    operan
+    operan,
+    pj_operan
 FROM operan
 WHERE unit = ?
 ORDER BY id DESC
@@ -274,6 +296,123 @@ st.caption(
     f"Total data {selected_unit}: {len(unit_df)}"
 )
 
+# =========================
+# FILTER DOWNLOAD PDF
+# =========================
+st.divider()
+
+st.subheader("⬇️ Download PDF Operan")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    start_date = st.date_input(
+        "Dari Tanggal"
+    )
+
+with col2:
+    end_date = st.date_input(
+        "Sampai Tanggal"
+    )
+
+# =========================
+# QUERY PDF
+# =========================
+pdf_query = """
+SELECT
+    tanggal,
+    unit,
+    shift,
+    no_rm,
+    nama_pasien,
+    kamar,
+    diagnosa,
+    operan,
+    pj_operan
+FROM operan
+WHERE unit = ?
+AND date(tanggal) BETWEEN date(?) AND date(?)
+ORDER BY tanggal DESC
+"""
+
+pdf_df = pd.read_sql_query(
+    pdf_query,
+    conn,
+    params=(
+        selected_unit,
+        str(start_date),
+        str(end_date)
+    )
+)
+
+# =========================
+# GENERATE PDF
+# =========================
+def generate_pdf(dataframe):
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4)
+    )
+
+    styles = getSampleStyleSheet()
+
+    elements = []
+
+    title = Paragraph(
+        f"Operan Shift - {selected_unit}",
+        styles['Title']
+    )
+
+    elements.append(title)
+    elements.append(Spacer(1, 12))
+
+    data = [list(dataframe.columns)]
+
+    for row in dataframe.values.tolist():
+        data.append(row)
+
+    table = Table(data)
+
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+    ]))
+
+    elements.append(table)
+
+    doc.build(elements)
+
+    pdf = buffer.getvalue()
+
+    buffer.close()
+
+    return pdf
+
+# =========================
+# DOWNLOAD PDF BUTTON
+# =========================
+if not pdf_df.empty:
+
+    pdf_file = generate_pdf(pdf_df)
+
+    st.download_button(
+        label="⬇️ Download PDF",
+        data=pdf_file,
+        file_name=f"operan_{selected_unit}.pdf",
+        mime="application/pdf"
+    )
+
+else:
+
+    st.info(
+        "Tidak ada data pada rentang tanggal tersebut"
+    )
 
 # =========================
 # ADMIN DATABASE VIEWER
