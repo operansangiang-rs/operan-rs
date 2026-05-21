@@ -82,7 +82,7 @@ try:
 
     c.execute("""
     DELETE FROM operan
-    WHERE date(tanggal) <= date('now', '-40 day')
+    WHERE datetime(tanggal) <= datetime('now', '-40 day')
     """)
 
     conn.commit()
@@ -179,15 +179,14 @@ with st.form("form_operan"):
 
     with col1:
 
-      tanggal = pd.Timestamp.now().strftime(
-    "%Y-%m-%d %H:%M:%S"
-    )
-    
-    st.text_input(
-        "Tanggal Input",
-        value=tanggal,
-        disabled=True
-    )
+        tanggal = pd.Timestamp.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        st.text_input(
+            "Tanggal Input",
+            value=tanggal,
+            disabled=True
         )
 
         shift = st.selectbox(
@@ -257,7 +256,7 @@ if submit:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                str(tanggal),
+                tanggal,
                 selected_unit,
                 shift,
                 no_rm,
@@ -328,11 +327,13 @@ st.subheader("⬇️ Download PDF Operan")
 col1, col2 = st.columns(2)
 
 with col1:
+
     start_date = st.date_input(
         "Dari Tanggal"
     )
 
 with col2:
+
     end_date = st.date_input(
         "Sampai Tanggal"
     )
