@@ -47,6 +47,18 @@ conn = conn_db()
 c = conn.cursor()
 
 # =========================
+# AUTO DELETE > 40 HARI (TAMBAHAN BARU)
+# =========================
+try:
+    c.execute("""
+        DELETE FROM operan
+        WHERE julianday('now') - julianday(tanggal) > 40
+    """)
+    conn.commit()
+except Exception as e:
+    print("Auto delete error:", e)
+
+# =========================
 # TABLE
 # =========================
 c.execute("""
@@ -185,7 +197,7 @@ if submit:
         st.rerun()
 
 # =========================
-# LIST DATA (CARD + BUTTON DETAIL)
+# LIST DATA
 # =========================
 st.subheader(f"📋 Data Operan - {selected_unit}")
 
@@ -197,7 +209,7 @@ for _, row in df.iterrows():
 
         st.markdown("---")
 
-        col1, col2, col3, col4 = st.columns([2,2,2,2])
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             st.write("📅", row["tanggal"])
@@ -332,6 +344,3 @@ if not pdf_df.empty:
         file_name=f"operan_{selected_unit}.pdf",
         mime="application/pdf"
     )
-
-else:
-    st.info("Tidak ada data")
