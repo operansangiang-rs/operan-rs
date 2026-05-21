@@ -19,21 +19,12 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown(
-    """
-    <style>
-    .main {background-color: #f5f7fb;}
-    div[data-testid="stMetric"] {
-        background-color: white;
-        border-radius: 12px;
-        padding: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    .block-container {padding-top: 2rem;}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown("""
+<style>
+.main {background-color: #f5f7fb;}
+.block-container {padding-top: 2rem;}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 
@@ -92,7 +83,13 @@ hour = datetime.now(jakarta).hour
 auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
-# FORM INPUT (CARD STYLE)
+# SESSION RESET KEY (INI KUNCI BIAR INPUT HILANG)
+# =========================
+if "reset_form" not in st.session_state:
+    st.session_state.reset_form = False
+
+# =========================
+# FORM INPUT
 # =========================
 st.subheader("📝 Input Operan")
 
@@ -102,30 +99,47 @@ with st.container(border=True):
 
     with col1:
         st.text_input("Tanggal", value=datetime.now(jakarta).strftime("%Y-%m-%d %H:%M"), disabled=True)
-        st.text_input("Shift", value=auto_shift, disabled=True)
 
     with col2:
-        no_rm = st.text_input("No RM")
-        nama_pasien = st.text_input("Nama Pasien")
+        no_rm = st.text_input("No RM", key="no_rm")
+        nama_pasien = st.text_input("Nama Pasien", key="nama_pasien")
 
     with col3:
-        kamar = st.text_input("Kamar")
-        diagnosa = st.text_input("Diagnosa")
-        pj_operan = st.text_input("PJ Operan")
+        kamar = st.text_input("Kamar", key="kamar")
+        diagnosa = st.text_input("Diagnosa", key="diagnosa")
+        pj_operan = st.text_input("PJ Operan", key="pj_operan")
 
-    operan = st.text_area("Isi Operan", height=140)
+    operan = st.text_area("Isi Operan", height=140, key="operan")
 
     if st.button("💾 Simpan Operan", use_container_width=True):
+
         if no_rm and nama_pasien:
+
             c.execute("""
-                INSERT INTO operan (tanggal, unit, shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan)
+                INSERT INTO operan (
+                    tanggal, unit, shift, no_rm, nama_pasien,
+                    kamar, diagnosa, operan, pj_operan
+                )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S"),
                 selected_unit, auto_shift,
-                no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan
+                no_rm, nama_pasien, kamar,
+                diagnosa, operan, pj_operan
             ))
+
             conn.commit()
+
+            # =========================
+            # RESET INPUT (INI YANG FIX INPUT TIDAK HILANG)
+            # =========================
+            st.session_state.no_rm = ""
+            st.session_state.nama_pasien = ""
+            st.session_state.kamar = ""
+            st.session_state.diagnosa = ""
+            st.session_state.pj_operan = ""
+            st.session_state.operan = ""
+
             st.rerun()
 
 # =========================
@@ -139,24 +153,17 @@ LIMIT 100
 """, conn, params=(selected_unit,))
 
 # =========================
-# SUMMARY METRIC
+# METRIC
 # =========================
 colA, colB, colC = st.columns(3)
 colA.metric("Total Operan", len(df))
 colB.metric("Unit", selected_unit)
-colC.metric("Shift Aktif", auto_shift)
+colC.metric("Shift", auto_shift)
 
 # =========================
-# DATA LIST (CARD STYLE + DETAIL BUTTON)
+# DATA LIST + DETAIL
 # =========================
 st.subheader("📋 Data Operan")
-
-df = pd.read_sql_query("""
-SELECT * FROM operan
-WHERE unit = ?
-ORDER BY id DESC
-LIMIT 100
-""", conn, params=(selected_unit,))
 
 for _, r in df.iterrows():
 
@@ -171,10 +178,7 @@ for _, r in df.iterrows():
 
         st.write(f"🏠 Kamar: {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ PJ: {r['pj_operan']}")
 
-        # =========================
-        # DETAIL FIX (INI KUNCI)
-        # =========================
-        with st.expander("📄 Lihat Detail Operan"):
+        with st.expander("📄 Detail Operan"):
             st.text_area(
                 "Isi Operan",
                 value=r["operan"] if r["operan"] else "-",
@@ -196,6 +200,7 @@ edit_by = st.text_input("Nama Editor")
 edit_text = st.text_area("Operan Baru")
 
 if st.button("Update Operan"):
+
     now = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
     c.execute("""
