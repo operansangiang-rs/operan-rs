@@ -34,7 +34,7 @@ st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
-# DB CONNECTION
+# DB
 # =========================
 @st.cache_resource
 def get_conn():
@@ -80,13 +80,13 @@ else:
     auto_shift = "Malam"
 
 # =========================
-# RESET FORM STATE
+# RESET FORM FLAG
 # =========================
 if "reset_form" not in st.session_state:
     st.session_state.reset_form = False
 
 # =========================
-# UNIT LIST
+# UNIT
 # =========================
 unit_list = [
     "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
@@ -98,7 +98,7 @@ st.sidebar.title("🏥 Pilih Unit")
 selected_unit = st.sidebar.selectbox("Unit", unit_list)
 
 # =========================
-# LOAD DATA (ANTI NAN FIX)
+# LOAD DATA
 # =========================
 @st.cache_data(ttl=10)
 def load_data(unit):
@@ -142,12 +142,12 @@ if len(search) >= 3:
         LIMIT 50
     """, conn, params=(f"%{search}%", f"%{search}%"))
 
-    st.dataframe(df_search, use_container_width=True, height=300)
+    st.dataframe(df_search, use_container_width=True)
 
 st.divider()
 
 # =========================
-# INPUT FORM
+# INPUT
 # =========================
 st.subheader(f"📝 Input Operan - {selected_unit}")
 
@@ -164,37 +164,21 @@ with st.form("form_operan"):
 
         shift = auto_shift
 
-        no_rm = st.text_input(
-            "No RM",
-            value="" if st.session_state.reset_form else ""
-        )
-
-        nama_pasien = st.text_input(
-            "Nama Pasien",
-            value="" if st.session_state.reset_form else ""
-        )
+        no_rm = st.text_input("No RM")
+        nama_pasien = st.text_input("Nama Pasien")
 
     with col2:
 
         kamar = st.text_input("Kamar")
         diagnosa = st.text_input("Diagnosa")
+        pj_operan = st.text_input("PJ Operan")
 
-        pj_operan = st.text_input(
-            "PJ Operan",
-            value="" if st.session_state.reset_form else ""
-        )
-
-    operan = st.text_area(
-        "Operan",
-        height=130,
-        max_chars=1500,
-        value="" if st.session_state.reset_form else ""
-    )
+    operan = st.text_area("Operan", height=130, max_chars=1500)
 
     submit = st.form_submit_button("Simpan")
 
 # =========================
-# SAVE DATA
+# SAVE
 # =========================
 if submit:
 
@@ -225,7 +209,7 @@ if submit:
         st.rerun()
 
 # =========================
-# LIST DATA (CARD VIEW CLEAN)
+# LIST DATA + DETAIL + DELETE
 # =========================
 st.subheader(f"📋 Data Operan - {selected_unit}")
 
@@ -233,62 +217,57 @@ df = load_data(selected_unit)
 
 for _, row in df.iterrows():
 
-    with st.container():
+    st.markdown("---")
 
-        st.markdown("---")
+    c1, c2, c3, c4 = st.columns(4)
 
-        col1, col2, col3, col4 = st.columns(4)
+    with c1:
+        st.write("📅", row["tanggal"])
+    with c2:
+        st.write("⏱", row["shift"])
+    with c3:
+        st.write("🆔", row["no_rm"])
+    with c4:
+        st.write("👤", row["nama_pasien"])
 
-        with col1:
-            st.write("📅", row["tanggal"])
+    c5, c6, c7 = st.columns([3,1,1])
 
-        with col2:
-            st.write("⏱", row["shift"])
+    with c5:
+        st.write("🏠 Kamar:", row["kamar"])
+        st.write("👨‍⚕️ PJ:", row["pj_operan"])
+        st.caption(f"✏️ Edit: {row['edited_by']} | {row['edited_at']}")
 
-        with col3:
-            st.write("🆔", row["no_rm"])
+    with c6:
+        if st.button("📄 Detail", key=f"d_{row['id']}"):
 
-        with col4:
-            st.write("👤", row["nama_pasien"])
+            st.session_state["detail"] = row.to_dict()
 
-        col5, col6 = st.columns([3,1])
+    with c7:
+        if st.button("🗑 Hapus", key=f"del_{row['id']}"):
 
-        with col5:
-            st.write("🏠 Kamar:", row["kamar"])
-            st.write("👨‍⚕️ PJ:", row["pj_operan"])
-            st.caption(f"✏️ Edit: {row['edited_by']} | {row['edited_at']}")
+            c.execute("DELETE FROM operan WHERE id = ?", (row["id"],))
+            conn.commit()
 
-        with col6:
-            if st.button("📄 Detail", key=f"btn_{row['id']}"):
+            load_data.clear()
 
-                st.session_state["detail"] = {
-                    "nama": row["nama_pasien"],
-                    "rm": row["no_rm"],
-                    "tanggal": row["tanggal"],
-                    "operan": row["operan"],
-                    "pj": row["pj_operan"],
-                    "edited_by": row["edited_by"],
-                    "edited_at": row["edited_at"]
-                }
+            st.warning("Terhapus")
+            st.rerun()
 
 # =========================
 # DETAIL VIEW
 # =========================
 if "detail" in st.session_state:
 
-    data = st.session_state["detail"]
+    d = st.session_state["detail"]
 
     st.divider()
+    st.subheader(f"📄 Detail - {d['nama_pasien']}")
 
-    st.subheader(f"📄 Detail Operan - {data['nama']}")
+    st.write("RM:", d["no_rm"])
+    st.write("PJ:", d["pj_operan"])
+    st.caption(f"✏️ {d['edited_by']} | {d['edited_at']}")
 
-    st.caption(f"RM: {data['rm']} | {data['tanggal']}")
-
-    st.write("👨‍⚕️ PJ:", data.get("pj", "-"))
-
-    st.caption(f"✏️ {data.get('edited_by','-')} | {data.get('edited_at','-')}")
-
-    st.info(data["operan"])
+    st.info(d["operan"])
 
 # =========================
 # EDIT
@@ -296,7 +275,7 @@ if "detail" in st.session_state:
 st.divider()
 st.subheader("✏️ Edit Operan")
 
-edit_rm = st.text_input("No RM Edit")
+edit_rm = st.text_input("No RM")
 edit_by = st.text_input("Nama Pengedit")
 edit_text = st.text_area("Operan Baru")
 
