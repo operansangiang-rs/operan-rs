@@ -80,6 +80,12 @@ else:
     auto_shift = "Malam"
 
 # =========================
+# RESET FORM STATE
+# =========================
+if "reset_form" not in st.session_state:
+    st.session_state.reset_form = False
+
+# =========================
 # UNIT LIST
 # =========================
 unit_list = [
@@ -127,15 +133,16 @@ if len(search) >= 3:
 st.divider()
 
 # =========================
-# INPUT
+# INPUT FORM
 # =========================
 st.subheader(f"📝 Input Operan - {selected_unit}")
 
-with st.form("form"):
+with st.form("form_operan"):
 
     col1, col2 = st.columns(2)
 
     with col1:
+
         tanggal = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
         st.text_input("Tanggal", value=tanggal, disabled=True)
@@ -143,15 +150,32 @@ with st.form("form"):
 
         shift = auto_shift
 
-        no_rm = st.text_input("No RM")
-        nama_pasien = st.text_input("Nama Pasien")
+        no_rm = st.text_input(
+            "No RM",
+            value="" if st.session_state.reset_form else ""
+        )
+
+        nama_pasien = st.text_input(
+            "Nama Pasien",
+            value="" if st.session_state.reset_form else ""
+        )
 
     with col2:
+
         kamar = st.text_input("Kamar")
         diagnosa = st.text_input("Diagnosa")
-        pj_operan = st.text_input("PJ Operan")
 
-    operan = st.text_area("Operan", height=130, max_chars=1500)
+        pj_operan = st.text_input(
+            "PJ Operan",
+            value="" if st.session_state.reset_form else ""
+        )
+
+    operan = st.text_area(
+        "Operan",
+        height=130,
+        max_chars=1500,
+        value="" if st.session_state.reset_form else ""
+    )
 
     submit = st.form_submit_button("Simpan")
 
@@ -171,7 +195,7 @@ if submit:
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            tanggal, selected_unit, shift,
+            tanggal, selected_unit, auto_shift,
             no_rm, nama_pasien,
             kamar, diagnosa,
             operan, pj_operan
@@ -181,11 +205,14 @@ if submit:
 
         load_data.clear()
 
+        # RESET FORM
+        st.session_state.reset_form = True
+
         st.success("Tersimpan")
         st.rerun()
 
 # =========================
-# LIST DATA (CARD + BUTTON DETAIL)
+# LIST DATA (CARD VIEW)
 # =========================
 st.subheader(f"📋 Data Operan - {selected_unit}")
 
@@ -215,16 +242,22 @@ for _, row in df.iterrows():
 
         with col5:
             st.write("🏠 Kamar:", row["kamar"])
+            st.write("👨‍⚕️ PJ:", row["pj_operan"])
+
+            if row["edited_by"]:
+                st.caption(f"✏️ Edited by {row['edited_by']} | {row['edited_at']}")
 
         with col6:
-
             if st.button("📄 Detail", key=f"btn_{row['id']}"):
 
                 st.session_state["detail"] = {
                     "nama": row["nama_pasien"],
                     "rm": row["no_rm"],
                     "tanggal": row["tanggal"],
-                    "operan": row["operan"]
+                    "operan": row["operan"],
+                    "pj": row["pj_operan"],
+                    "edited_by": row["edited_by"],
+                    "edited_at": row["edited_at"]
                 }
 
 # =========================
@@ -240,12 +273,18 @@ if "detail" in st.session_state:
 
     st.caption(f"RM: {data['rm']} | {data['tanggal']}")
 
+    st.write("👨‍⚕️ PJ:", data.get("pj", "-"))
+
+    if data.get("edited_by"):
+        st.caption(f"✏️ Edited by {data['edited_by']} | {data['edited_at']}")
+
     st.info(data["operan"])
 
 # =========================
-# EDIT
+# EDIT OPERAN
 # =========================
 st.divider()
+
 st.subheader("✏️ Edit Operan")
 
 edit_rm = st.text_input("No RM Edit")
@@ -270,7 +309,7 @@ if st.button("Update"):
     st.rerun()
 
 # =========================
-# PDF EXPORT
+# PDF
 # =========================
 st.divider()
 st.subheader("⬇️ Download PDF")
@@ -298,11 +337,10 @@ def generate_pdf(df):
     styles = getSampleStyleSheet()
 
     elements = []
-    elements.append(Paragraph("Operan Shift", styles["Title"]))
+    elements.append(Paragraph("Operan Shift RS", styles["Title"]))
     elements.append(Spacer(1, 12))
 
     data = [list(df.columns)]
-
     for r in df.values.tolist():
         data.append(r)
 
