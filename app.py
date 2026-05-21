@@ -19,26 +19,43 @@ st.set_page_config(
     layout="wide"
 )
 
+# =========================
+# SOFT GRAY THEME
+# =========================
 st.markdown("""
 <style>
-section[data-testid="stSidebar"] {
-    background: #111827 !important;
-}
-section[data-testid="stSidebar"] * {
-    color: white !important;
-}
 
 .block-container {
+    background: #f3f4f6;
     padding-top: 1rem;
-    background: #f6f8fc;
+}
+
+section[data-testid="stSidebar"] {
+    background: #e5e7eb !important;
+}
+
+section[data-testid="stSidebar"] * {
+    color: #111827 !important;
 }
 
 div[data-testid="stMetric"]{
-    background: white;
+    background: #ffffff;
     padding: 12px;
     border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
 }
+
+.stButton>button {
+    background: #6b7280;
+    color: white;
+    border-radius: 8px;
+}
+
+.stButton>button:hover {
+    background: #4b5563;
+    color: white;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -84,27 +101,19 @@ CREATE TABLE IF NOT EXISTS operan (
 conn.commit()
 
 # =========================
-# UNIT LIST
+# UNIT
 # =========================
-unit_list = [
-    "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
-    "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
-    "IGD","NICU","PICU"
-]
+unit_list = ["ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
+             "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
+             "IGD","NICU","PICU"]
 
-st.sidebar.title("🏥 UNIT")
-selected_unit = st.sidebar.selectbox("Pilih Unit", unit_list)
+selected_unit = st.sidebar.selectbox("🏥 Unit", unit_list)
 
 # =========================
-# AUTO SHIFT
+# SHIFT AUTO
 # =========================
 hour = datetime.now(jakarta).hour
-if hour < 14:
-    auto_shift = "Pagi"
-elif hour < 21:
-    auto_shift = "Sore"
-else:
-    auto_shift = "Malam"
+auto_shift = "Pagi" if hour < 14 else "Sore" if hour < 21 else "Malam"
 
 # =========================
 # INPUT FORM
@@ -120,15 +129,15 @@ with st.container(border=True):
         st.text_input("Shift", auto_shift, disabled=True)
 
     with col2:
-        no_rm = st.text_input("No RM", key="no_rm_input")
-        nama_pasien = st.text_input("Nama Pasien", key="nama_input")
+        no_rm = st.text_input("No RM")
+        nama_pasien = st.text_input("Nama Pasien")
 
     with col3:
         kamar = st.text_input("Kamar")
         diagnosa = st.text_input("Diagnosa")
         pj_operan = st.text_input("PJ Operan")
 
-    operan = st.text_area("Isi Operan", height=140, key="operan_input")
+    operan = st.text_area("Isi Operan", height=140)
 
     if st.button("💾 Simpan Operan", use_container_width=True):
 
@@ -149,22 +158,7 @@ with st.container(border=True):
             ))
 
             conn.commit()
-
-            # RESET INPUT (FIX)
             st.rerun()
-
-# =========================
-# SUMMARY
-# =========================
-df_count = pd.read_sql_query("""
-SELECT COUNT(*) as total FROM operan
-WHERE unit = ?
-""", conn, params=(selected_unit,))
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Operan", int(df_count["total"].iloc[0]))
-c2.metric("Unit Aktif", selected_unit)
-c3.metric("Shift Sistem", auto_shift)
 
 # =========================
 # DATA LIST
@@ -191,16 +185,33 @@ for _, r in df.iterrows():
 
         st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
+        # =========================
+        # DETAIL + DELETE
+        # =========================
         with st.expander("📄 Detail Operan"):
+
             st.write(r["operan"])
 
-            st.caption(f"✏️ Edit by: {r['edited_by']} | {r['edited_at']}")
+            st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
+
+            colA, colB = st.columns(2)
+
+            # DELETE BUTTON
+            with colA:
+                if st.button(f"🗑 Hapus {r['id']}", key=f"del_{r['id']}"):
+
+                    c.execute("DELETE FROM operan WHERE id = ?", (r["id"],))
+                    conn.commit()
+                    st.rerun()
+
+            with colB:
+                st.info("Hapus permanen data ini")
 
 # =========================
 # EDIT TERAKHIR
 # =========================
 st.divider()
-st.subheader("✏️ Edit Operan Terakhir")
+st.subheader("✏️ Edit Operan")
 
 edit_rm = st.text_input("No RM")
 edit_by = st.text_input("Nama Editor")
