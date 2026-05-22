@@ -354,7 +354,7 @@ if not pdf_df.empty:
         m1.metric(label="👥 Total Pasien Unik", value=f"{total_pasien_periode} Orang")
         m2.metric(label="🟢 Total BPJS", value=f"{total_bpjs} Pasien")
         m3.metric(label="🔵 Total Umum", value=f"{total_umum} Pasien")
-        m4.metric(label="🟠 Total Asuransi/Kerja", value=f"{total_asuransi} Pasien")
+        m4.metric(label="🟠 Total Asuransi Swasta / Perusahaan", value=f"{total_asuransi} Pasien")
         
         # Tampilan Grafik Visual Berdampingan
         st.write("")
