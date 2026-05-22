@@ -231,7 +231,7 @@ if len(search.strip()) >= 3:
 st.divider()
 
 # =========================
-# INPUT FORM
+# INPUT FORM (Optimasi Ringan & Anti-Lag HP)
 # =========================
 st.subheader(f"📝 Input Operan - {selected_unit}")
 with st.form("form_input", clear_on_submit=True):
@@ -250,7 +250,7 @@ with st.form("form_input", clear_on_submit=True):
         diagnosa = st.text_input("Diagnosa Medis / Konsul Spesialis (e.g., Sp.PD / Sp.B)")
         pj_operan = st.text_input("PJ Penyerah Operan")
         
-    operan = st.text_area("Isi Instruksi / Catatan Operan", height=130, max_chars=1500)
+    operan = st.text_area("Isi Instruksi / Catatan Operan", height=130, max_chars=1500, placeholder="Gunakan format global untuk ICU / HD...")
     submit = st.form_submit_button("Simpan Data")
 
 if submit:
@@ -260,16 +260,15 @@ if submit:
         c.execute("""
             INSERT INTO operan (tanggal, unit, shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan, penjamin)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (waktu_input, selected_unit, auto_shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan, penjamin))
+        """, (waktu_input, selected_unit, auto_shift, no_rm.strip(), nama_pasien.strip(), kamar.strip(), diagnosa.strip(), operan.strip(), pj_operan.strip(), penjamin))
         conn.commit()
-        st.success("✅ Data operan berhasil disimpan!")
+        st.toast("✅ Data operan berhasil disimpan!", icon="🟢") # Pake toast biar HP gak nge-drop pas reload
         st.rerun()
 
 # =========================
 # DATA LIST (Tampilan Terkunci 2 Hari & Maksimal 3 Shift Terbaru)
 # =========================
 st.subheader(f"📋 Data Operan Aktif (2 Hari Terakhir) - {selected_unit}")
-# Optimasi: Keamanan pembacaan formulasi tanggal lokal SQLite
 df = pd.read_sql_query("""
     SELECT * FROM operan 
     WHERE unit = ? AND julianday('now', 'localtime') - julianday(tanggal) <= 2
@@ -297,7 +296,6 @@ else:
             
             st.markdown("<p style='margin:2px 0px; color:#777; font-size:13px;'><b>🩺 Timeline Instruksi Medis & Operan Shift (Maksimal 3 Shift Terbaru):</b></p>", unsafe_allow_html=True)
             
-            # Membatasi tampilan utama hanya maksimal 3 shift terbaru pasien tersebut
             render_timeline_operan(df_pasien.head(3), context_key="main")
 
 # =========================
@@ -312,7 +310,6 @@ with col_d1:
 with col_d2:
     end_date = st.date_input("Sampai Tanggal")
 
-# Optimasi: Memastikan object date dari Streamlit terkonversi ke ISO string secara ketat
 start_str = start_date.strftime("%Y-%m-%d") + " 00:00:00"
 end_str = end_date.strftime("%Y-%m-%d") + " 23:59:59"
 
@@ -369,6 +366,11 @@ def generate_pdf(dataframe):
 
 # Tombol Cetak PDF Utama
 if not pdf_df.empty:
+    # 💡 PENGINGAT BACKUP BULANAN DI ATAS TOMBOL DOWNLOAD
+    st.info("""
+    ⚠️ **Pemberitahuan Sistem:** Demi keamanan data rekam medis pada server gratisan, Kepala Ruangan / PJ Shift **WAJIB** mengunduh rekap PDF ini **setiap 1 bulan sekali** (di akhir bulan) untuk disimpan sebagai arsip internal unit.
+    """)
+    
     st.download_button(
         label="📄 Download Rekap PDF Terfilter",
         data=generate_pdf(pdf_df),
