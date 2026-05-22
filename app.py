@@ -47,12 +47,12 @@ conn = conn_db()
 c = conn.cursor()
 
 # =========================
-# AUTO DELETE > 40 HARI (TAMBAHAN BARU)
+# AUTO DELETE 15 HARI
 # =========================
 try:
     c.execute("""
         DELETE FROM operan
-        WHERE julianday('now') - julianday(tanggal) > 40
+        WHERE julianday('now') - julianday(tanggal) > 15
     """)
     conn.commit()
 except Exception as e:
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS operan (
 conn.commit()
 
 # =========================
-# AUTO SHIFT
+# SHIFT AUTO
 # =========================
 jam = datetime.now(jakarta).hour
 
@@ -92,7 +92,7 @@ else:
     auto_shift = "Malam"
 
 # =========================
-# UNIT LIST
+# UNIT
 # =========================
 unit_list = [
     "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
@@ -102,19 +102,6 @@ unit_list = [
 
 st.sidebar.title("🏥 Pilih Unit")
 selected_unit = st.sidebar.selectbox("Unit", unit_list)
-
-# =========================
-# CACHE DATA
-# =========================
-@st.cache_data(ttl=10)
-def load_data(unit):
-    return pd.read_sql_query("""
-        SELECT *
-        FROM operan
-        WHERE unit = ?
-        ORDER BY id DESC
-        LIMIT 100
-    """, conn, params=(unit,))
 
 # =========================
 # SEARCH
@@ -191,13 +178,20 @@ if submit:
 
         conn.commit()
 
-        load_data.clear()
-
         st.success("Tersimpan")
         st.rerun()
 
 # =========================
-# DATA LIST (INLINE DETAIL FIX)
+# STATE
+# =========================
+if "open_detail" not in st.session_state:
+    st.session_state["open_detail"] = None
+
+if "confirm_delete" not in st.session_state:
+    st.session_state["confirm_delete"] = None
+
+# =========================
+# DATA LIST
 # =========================
 st.subheader("📋 Data Operan")
 
@@ -209,67 +203,58 @@ ORDER BY id DESC
 LIMIT 100
 """, conn, params=(selected_unit,))
 
-if "open_detail" not in st.session_state:
-    st.session_state["open_detail"] = None
-
 for _, r in df.iterrows():
 
-    with st.container():
-        st.markdown("---")
+    st.markdown("---")
 
-        col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4 = st.columns(4)
 
-        col1.write(f"📅 {r['tanggal']}")
-        col2.write(f"⏱ {r['shift']}")
-        col3.write(f"🆔 {r['no_rm']}")
-        col4.write(f"👤 {r['nama_pasien']}")
+    col1.write(f"📅 {r['tanggal']}")
+    col2.write(f"⏱ {r['shift']}")
+    col3.write(f"🆔 {r['no_rm']}")
+    col4.write(f"👤 {r['nama_pasien']}")
 
-        st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
+    st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
-        colA, colB = st.columns([1, 1])
+    colA, colB = st.columns([1, 1])
 
-        # =========================
-        # BUTTON DETAIL (INLINE)
-        # =========================
-        if colA.button("📄 Detail", key=f"detail_{r['id']}"):
+    # DETAIL
+    if colA.button("📄 Detail", key=f"detail_{r['id']}"):
 
-            # toggle buka/tutup
-            if st.session_state["open_detail"] == r["id"]:
-                st.session_state["open_detail"] = None
-            else:
-                st.session_state["open_detail"] = r["id"]
-
-        # =========================
-        # BUTTON DELETE
-        # =========================
-        if colB.button("🗑 Hapus", key=f"del_{r['id']}"):
-
-            c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
-            conn.commit()
-            st.rerun()
-
-        # =========================
-        # DETAIL MUNCUL DI BAWAH ITEM YANG DIPILIH
-        # =========================
         if st.session_state["open_detail"] == r["id"]:
+            st.session_state["open_detail"] = None
+        else:
+            st.session_state["open_detail"] = r["id"]
 
-            st.info(r["operan"])
-            st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
+    # DELETE BUTTON
+    if colB.button("🗑 Hapus", key=f"del_{r['id']}"):
+        st.session_state["confirm_delete"] = r["id"]
 
-# =========================
-# DETAIL VIEW
-# =========================
-if "detail" in st.session_state:
+    # CONFIRM DELETE
+    if st.session_state["confirm_delete"] == r["id"]:
 
-    data = st.session_state["detail"]
+        st.warning(f"⚠️ Yakin ingin menghapus pasien: {r['nama_pasien']} ?")
 
-    st.divider()
+        col_yes, col_no = st.columns(2)
 
-    st.subheader(f"📄 Detail Operan - {data['nama']}")
+        with col_yes:
+            if st.button("✅ Ya, Hapus", key=f"yes_{r['id']}"):
 
-    st.caption(f"RM: {data['rm']} | {data['tanggal']}")
+                c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
+                conn.commit()
 
-    st.info(data["operan"])
+                st.session_state["confirm_delete"] = None
+                st.rerun()
+
+        with col_no:
+            if st.button("❌ Batal", key=f"no_{r['id']}"):
+                st.session_state["confirm_delete"] = None
+                st.rerun()
+
+    # DETAIL SHOW
+    if st.session_state["open_detail"] == r["id"]:
+        st.info(r["operan"])
+        st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
 
 # =========================
 # EDIT
@@ -293,8 +278,6 @@ if st.button("Update"):
 
     conn.commit()
 
-    load_data.clear()
-
     st.success("Updated")
     st.rerun()
 
@@ -316,9 +299,13 @@ pdf_df = pd.read_sql_query("""
     SELECT *
     FROM operan
     WHERE unit = ?
-    AND date(tanggal) BETWEEN date(?) AND date(?)
+    AND tanggal BETWEEN ? AND ?
     ORDER BY id DESC
-""", conn, params=(selected_unit, str(start_date), str(end_date)))
+""", conn, params=(
+    selected_unit,
+    f"{start_date} 00:00:00",
+    f"{end_date} 23:59:59"
+))
 
 def generate_pdf(df):
 
@@ -348,10 +335,7 @@ def generate_pdf(df):
     elements.append(table)
     doc.build(elements)
 
-    pdf = buffer.getvalue()
-    buffer.close()
-
-    return pdf
+    return buffer.getvalue()
 
 if not pdf_df.empty:
 
@@ -361,3 +345,15 @@ if not pdf_df.empty:
         file_name=f"operan_{selected_unit}.pdf",
         mime="application/pdf"
     )
+
+# =========================
+# FOOTER
+# =========================
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: #888; font-size: 12px;'>"
+    "🏥 Sistem Operan Shift RS Sari Asih Sangiang<br>"
+    "Developed by <b>RSD 2026</b> © All Rights Reserved"
+    "</div>",
+    unsafe_allow_html=True
+)
