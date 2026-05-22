@@ -210,9 +210,9 @@ for _, r in df.iterrows():
     col1, col2, col3, col4 = st.columns(4)
 
     col1.write(f"📅 {r['tanggal']}")
-    col2.write(f"⏱ {r['shift']}")
-    col3.write(f"🆔 {r['no_rm']}")
-    col4.write(f"👤 {r['nama_pasien']}")
+    col2.write(f"⏱ Shift: {r['shift']}")
+    col3.write(f"🏥 No RM: {r['no_rm']}")
+    col4.write(f"👤 Pasien: {r['nama_pasien']}")
 
     st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
 
@@ -270,22 +270,39 @@ if st.button("Update"):
 
     waktu = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
-    c.execute("""
-    UPDATE operan
-    SET operan = ?, edited_by = ?, edited_at = ?
-    WHERE id = (
-        SELECT id FROM operan
+    # =========================
+    # CEK NO RM ADA ATAU TIDAK
+    # =========================
+    cek = c.execute("""
+        SELECT COUNT(*)
+        FROM operan
         WHERE no_rm = ?
-        ORDER BY id DESC
-        LIMIT 1
-    )
-""", (edit_text, edit_by, waktu, edit_rm))
+    """, (edit_rm,)).fetchone()[0]
 
-    conn.commit()
+    if cek == 0:
+        st.error("❌ Tidak ada No RM / pasien yang sesuai")
 
-    st.success("Updated")
-    st.rerun()
+    else:
+        # =========================
+        # UPDATE DATA TERAKHIR
+        # =========================
+        c.execute("""
+            UPDATE operan
+            SET operan = ?, edited_by = ?, edited_at = ?
+            WHERE id = (
+                SELECT id FROM operan
+                WHERE no_rm = ?
+                ORDER BY id DESC
+                LIMIT 1
+            )
+        """, (edit_text, edit_by, waktu, edit_rm))
 
+        conn.commit()
+
+        st.success("✅ Operan berhasil diupdate (data terakhir)")
+        st.rerun()
+
+ 
 # =========================
 # PDF EXPORT
 # =========================
