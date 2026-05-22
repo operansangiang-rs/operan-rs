@@ -271,10 +271,15 @@ if st.button("Update"):
     waktu = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
 
     c.execute("""
-        UPDATE operan
-        SET operan = ?, edited_by = ?, edited_at = ?
+    UPDATE operan
+    SET operan = ?, edited_by = ?, edited_at = ?
+    WHERE id = (
+        SELECT id FROM operan
         WHERE no_rm = ?
-    """, (edit_text, edit_by, waktu, edit_rm))
+        ORDER BY id DESC
+        LIMIT 1
+    )
+""", (edit_text, edit_by, waktu, edit_rm))
 
     conn.commit()
 
