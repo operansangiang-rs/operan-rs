@@ -33,7 +33,7 @@ st.title("🏥 Operan Shift RS Sari Asih Sangiang")
 jakarta = pytz.timezone("Asia/Jakarta")
 
 # =========================
-# DB
+# DB CONNECTION
 # =========================
 @st.cache_resource
 def conn_db():
@@ -44,20 +44,6 @@ def conn_db():
 
 conn = conn_db()
 c = conn.cursor()
-
-# Auto Delete data lama (>180 hari / 6 bulan secara bertahap) & Indexing Efisiensi
-try:
-    c.execute("""
-        DELETE FROM operan 
-        WHERE julianday('now', 'localtime') - julianday(tanggal) > 180
-    """)
-    c.execute("CREATE INDEX IF NOT EXISTS idx_tanggal ON operan(tanggal);")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_unit ON operan(unit);")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_no_rm ON operan(no_rm);")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_nama ON operan(nama_pasien);")
-    conn.commit()
-except Exception as e:
-    print("Auto delete / indexing error:", e)
 
 # Pembuatan Table Awal jika belum ada
 c.execute("""
@@ -79,7 +65,22 @@ CREATE TABLE IF NOT EXISTS operan (
 """)
 conn.commit()
 
-# AUTO MIGRATION: Pengaman Data Lama Mas Lian agar tidak bentrok/crash
+# Auto Delete data lama (>180 hari / 6 bulan secara bertahap) & Indexing Efisiensi
+try:
+    # Optimasi: Menggunakan datetime('now', 'localtime') yang lebih konsisten dengan format string tanggal
+    c.execute("""
+        DELETE FROM operan 
+        WHERE julianday('now', 'localtime') - julianday(tanggal) > 180
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_tanggal ON operan(tanggal);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_unit ON operan(unit);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_no_rm ON operan(no_rm);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_nama ON operan(nama_pasien);")
+    conn.commit()
+except Exception as e:
+    print("Auto delete / indexing error:", e)
+
+# AUTO MIGRATION: Pengaman Data Lama agar tidak bentrok/crash
 try:
     c.execute("PRAGMA table_info(operan)")
     columns = [column[1] for column in c.fetchall()]
@@ -166,7 +167,7 @@ def render_timeline_operan(dataframe, context_key="main"):
                 tgl_input = jakarta.localize(tgl_input)
                 bisa_edit = (waktu_sekarang - tgl_input) <= timedelta(days=2)
             except:
-                bisa_edit = False # Jaga-jaga jika format tanggal tidak sesuai
+                bisa_edit = False 
                 
             if bisa_edit:
                 cA, cB = st.columns([1, 8])
@@ -197,7 +198,8 @@ def render_timeline_operan(dataframe, context_key="main"):
 st.subheader("🔎 Cari Riwayat & Edit Pasien")
 search = st.text_input("Masukkan No RM / Nama Pasien", placeholder="Cari data untuk melihat riwayat atau mengedit data (Maksimal 6 bulan)...")
 
-if len(search) >= 3:
+# Optimasi: Validasi strip() menghilangkan spasi kosong berlebih
+if len(search.strip()) >= 3:
     df_search = pd.read_sql_query("""
         SELECT * FROM operan
         WHERE no_rm LIKE ? OR nama_pasien LIKE ?
@@ -252,7 +254,7 @@ with st.form("form_input", clear_on_submit=True):
     submit = st.form_submit_button("Simpan Data")
 
 if submit:
-    if not (no_rm and nama_pasien and kamar and diagnosa and operan and pj_operan):
+    if not (no_rm.strip() and nama_pasien.strip() and kamar.strip() and diagnosa.strip() and operan.strip() and pj_operan.strip()):
         st.error("❌ Gagal menyimpan! Semua kolom wajib diisi demi keselamatan dan ketepatan operan pasien.")
     else:
         c.execute("""
@@ -266,8 +268,8 @@ if submit:
 # =========================
 # DATA LIST (Tampilan Terkunci 2 Hari & Maksimal 3 Shift Terbaru)
 # =========================
-# 🛠️ OPTIMASI MAS LIAN: Query SQL diganti ke '<= 2' agar hanya memuat pasien aktif 2 hari terakhir
 st.subheader(f"📋 Data Operan Aktif (2 Hari Terakhir) - {selected_unit}")
+# Optimasi: Keamanan pembacaan formulasi tanggal lokal SQLite
 df = pd.read_sql_query("""
     SELECT * FROM operan 
     WHERE unit = ? AND julianday('now', 'localtime') - julianday(tanggal) <= 2
@@ -310,13 +312,16 @@ with col_d1:
 with col_d2:
     end_date = st.date_input("Sampai Tanggal")
 
-# Ambil data lengkap untuk cetak PDF
+# Optimasi: Memastikan object date dari Streamlit terkonversi ke ISO string secara ketat
+start_str = start_date.strftime("%Y-%m-%d") + " 00:00:00"
+end_str = end_date.strftime("%Y-%m-%d") + " 23:59:59"
+
 pdf_df = pd.read_sql_query("""
     SELECT tanggal, shift, no_rm, nama_pasien, penjamin, kamar, diagnosa, operan, pj_operan
     FROM operan
     WHERE unit = ? AND tanggal BETWEEN ? AND ?
     ORDER BY tanggal ASC
-""", conn, params=(selected_unit, f"{start_date} 00:00:00", f"{end_date} 23:59:59"))
+""", conn, params=(selected_unit, start_str, end_str))
 
 def generate_pdf(dataframe):
     buffer = BytesIO()
@@ -371,31 +376,25 @@ if not pdf_df.empty:
         mime="application/pdf"
     )
     
-    # SEKSI TAMBAHAN: MENGGUNAKAN EXPANDER AGAR LAYAR TETAP RAPI (MODEL LIPAT)
     st.write("")
     with st.expander("📊 Lihat Ringkasan Statistik & Grafik Pasien Terfilter", expanded=False):
         
-        # Mengisi data penjamin kosong ke 'Umum' demi konsistensi grafik
         pdf_df['penjamin'] = pdf_df['penjamin'].fillna('Umum').replace('', 'Umum')
         
-        # Menghitung pasien unik (berdasarkan No RM) untuk akurasi jumlah pasien asli
         df_pasien_unik = pdf_df.drop_duplicates(subset=['no_rm'])
         total_pasien_periode = len(df_pasien_unik)
         
-        # Hitung distribusi penjamin dari list pasien unik
         counts = df_pasien_unik['penjamin'].value_counts()
         total_bpjs = counts.get('BPJS', 0)
         total_umum = counts.get('Umum', 0)
         total_asuransi = counts.get('Asuransi Swasta / Perusahaan', 0)
         
-        # Tampilan kartu angka (Metric Card)
         m1, m2, m3, m4 = st.columns(4)
         m1.metric(label="👥 Total Pasien Unik", value=f"{total_pasien_periode} Orang")
         m2.metric(label="🟢 Total BPJS", value=f"{total_bpjs} Pasien")
         m3.metric(label="🔵 Total Umum", value=f"{total_umum} Pasien")
         m4.metric(label="🟠 Total Asuransi Swasta / Perusahaan", value=f"{total_asuransi} Pasien")
         
-        # Tampilan Grafik Visual Berdampingan
         st.write("")
         g1, g2 = st.columns([2, 1])
         
@@ -416,6 +415,8 @@ if not pdf_df.empty:
                 'Persentase (%)': ((counts.values / total_pasien_periode) * 100).round(1)
             })
             st.dataframe(rekap_tabel, use_container_width=True, hide_index=True)
+else:
+    st.info("Tidak ada data operan yang terekam pada rentang tanggal terpilih.")
 
 # =========================
 # FOOTER
