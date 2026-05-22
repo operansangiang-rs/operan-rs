@@ -67,7 +67,6 @@ conn.commit()
 
 # Auto Delete data lama (>180 hari / 6 bulan secara bertahap) & Indexing Efisiensi
 try:
-    # Optimasi: Menggunakan datetime('now', 'localtime') yang lebih konsisten dengan format string tanggal
     c.execute("""
         DELETE FROM operan 
         WHERE julianday('now', 'localtime') - julianday(tanggal) > 180
@@ -112,6 +111,68 @@ unit_list = [
 
 st.sidebar.title("🏥 Pilih Unit")
 selected_unit = st.sidebar.selectbox("Unit", unit_list)
+
+
+# ==========================================
+# 🛠️ TOMBOL BACKUP MANUAL 40 HARI (DI SIDEBAR)
+# ==========================================
+st.sidebar.divider()
+st.sidebar.write("🛠️ **Menu Admin / Backup**")
+
+hari_ini = datetime.now(jakarta)
+tanggal_40_hari_lalu = (hari_ini - timedelta(days=40)).strftime("%Y-%m-%d") + " 00:00:00"
+tanggal_sekarang_str = hari_ini.strftime("%Y-%m-%d") + " 23:59:59"
+
+tgl_file_mulai = (hari_ini - timedelta(days=40)).strftime("%Y-%m-%d")
+tgl_file_selesai = hari_ini.strftime("%Y-%m-%d")
+
+try:
+    c.execute("""
+        SELECT * FROM operan 
+        WHERE tanggal BETWEEN ? AND ?
+    """, (tanggal_40_hari_lalu, tanggal_sekarang_str))
+    backup_rows = c.fetchall()
+    
+    c.execute("PRAGMA table_info(operan)")
+    columns_info = c.fetchall()
+    
+    if backup_rows:
+        # Pake file temp lokal sementara di server, bukan BytesIO langsung ke sqlite3
+        temp_filename = "temp_backup.db"
+        
+        mem_conn = sqlite3.connect(temp_filename)
+        mem_c = mem_conn.cursor()
+        
+        create_table_sql = "CREATE TABLE IF NOT EXISTS operan (" + ", ".join([f"{col[1]} {col[2]}" for col in columns_info]) + ")"
+        mem_c.execute(create_table_sql)
+        
+        # Bersihkan data lama di file temp jika ada sisa proses sebelumnya
+        mem_c.execute("DELETE FROM operan")
+        
+        placeholders = ", ".join(["?"] * len(columns_info))
+        mem_c.executemany(f"INSERT INTO operan VALUES ({placeholders})", backup_rows)
+        mem_conn.commit()
+        mem_conn.close()
+        
+        # Baca file temp tadi ke dalam bentuk bytes agar bisa didownload
+        with open(temp_filename, "rb") as f:
+            db_bytes = f.read()
+            
+        st.sidebar.download_button(
+            label="💾 Backup DB (40 Hari Terakhir)",
+            data=db_bytes,
+            file_name=f"backup_operan_RS_{tgl_file_mulai}_sampai_{tgl_file_selesai}.db",
+            mime="application/octet-stream",
+            help="Klik untuk mengunduh database seluruh unit khusus 40 hari terakhir saja.",
+            use_container_width=True
+        )
+    else:
+        st.sidebar.info("Belum ada data dalam 40 hari terakhir.")
+        
+except Exception as error_backup:
+    st.sidebar.error(f"Gagal menyiapkan backup: {error_backup}")
+
+st.sidebar.divider()
 
 # =========================
 # DIALOG UNTUK EDIT DATA
@@ -193,12 +254,11 @@ def render_timeline_operan(dataframe, context_key="main"):
                 st.caption("🔒 *Catatan ini telah dikunci (Sudah melewati batas waktu toleransi edit 2 hari).*")
 
 # =========================
-# 🔎 NOMER 1: SEARCH OPTIMIZATION (Bisa Edit, Akses Riwayat 6 Bulan)
+# 🔎 SEARCH OPTIMIZATION
 # =========================
 st.subheader("🔎 Cari Riwayat & Edit Pasien")
 search = st.text_input("Masukkan No RM / Nama Pasien", placeholder="Cari data untuk melihat riwayat atau mengedit data (Maksimal 6 bulan)...")
 
-# Optimasi: Validasi strip() menghilangkan spasi kosong berlebih
 if len(search.strip()) >= 3:
     df_search = pd.read_sql_query("""
         SELECT * FROM operan
@@ -223,7 +283,6 @@ if len(search.strip()) >= 3:
                 col_s3.markdown(f"💳 **Penjamin:** {badge_penjamin}")
                 col_s4.markdown(f"🏠 **Kamar:** {info_terbaru['kamar']}")
                 
-                # Tampilkan seluruh hasil pencarian riwayat yang ditemukan
                 render_timeline_operan(df_s_pasien, context_key="search")
     else:
         st.info("Tidak ditemukan riwayat kunjungan pasien dengan kata kunci tersebut.")
@@ -231,7 +290,7 @@ if len(search.strip()) >= 3:
 st.divider()
 
 # =========================
-# INPUT FORM (Optimasi Ringan & Anti-Lag HP)
+# INPUT FORM
 # =========================
 st.subheader(f"📝 Input Operan - {selected_unit}")
 with st.form("form_input", clear_on_submit=True):
@@ -262,11 +321,11 @@ if submit:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (waktu_input, selected_unit, auto_shift, no_rm.strip(), nama_pasien.strip(), kamar.strip(), diagnosa.strip(), operan.strip(), pj_operan.strip(), penjamin))
         conn.commit()
-        st.toast("✅ Data operan berhasil disimpan!", icon="🟢") # Pake toast biar HP gak nge-drop pas reload
+        st.toast("✅ Data operan berhasil disimpan!", icon="🟢")
         st.rerun()
 
 # =========================
-# DATA LIST (Tampilan Terkunci 2 Hari & Maksimal 3 Shift Terbaru)
+# DATA LIST
 # =========================
 st.subheader(f"📋 Data Operan Aktif (2 Hari Terakhir) - {selected_unit}")
 df = pd.read_sql_query("""
@@ -299,7 +358,7 @@ else:
             render_timeline_operan(df_pasien.head(3), context_key="main")
 
 # =========================
-# PDF EXPORT & STATISTIK REKAP PERIODE
+# PDF EXPORT & STATISTIK
 # =========================
 st.divider()
 st.subheader("⬇️ Rekap Cetak PDF & Analisis Data Periode")
@@ -364,9 +423,7 @@ def generate_pdf(dataframe):
     doc.build(elements)
     return buffer.getvalue()
 
-# Tombol Cetak PDF Utama
 if not pdf_df.empty:
-    # 💡 PENGINGAT BACKUP BULANAN DI ATAS TOMBOL DOWNLOAD
     st.info("""
     ⚠️ **Pemberitahuan Sistem:** Demi keamanan data rekam medis pada server gratisan, Kepala Ruangan / PJ Shift **WAJIB** mengunduh rekap PDF ini **setiap 1 bulan sekali** (di akhir bulan) untuk disimpan sebagai arsip internal unit.
     """)
@@ -380,9 +437,7 @@ if not pdf_df.empty:
     
     st.write("")
     with st.expander("📊 Lihat Ringkasan Statistik & Grafik Pasien Terfilter", expanded=False):
-        
         pdf_df['penjamin'] = pdf_df['penjamin'].fillna('Umum').replace('', 'Umum')
-        
         df_pasien_unik = pdf_df.drop_duplicates(subset=['no_rm'])
         total_pasien_periode = len(df_pasien_unik)
         
@@ -406,7 +461,6 @@ if not pdf_df.empty:
                 'Jenis Penjamin': counts.index,
                 'Jumlah Pasien': counts.values
             }).set_index('Jenis Penjamin')
-            
             st.bar_chart(chart_data, color="#1A365D")
             
         with g2:
