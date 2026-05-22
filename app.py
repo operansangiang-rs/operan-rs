@@ -12,9 +12,8 @@ from reportlab.platypus import (
     Paragraph,
     Spacer
 )
-
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import landscape, A4
 
 # =========================
@@ -46,21 +45,14 @@ def conn_db():
 conn = conn_db()
 c = conn.cursor()
 
-# =========================
-# AUTO DELETE 15 HARI
-# =========================
+# Auto Delete data lama (>15 hari)
 try:
-    c.execute("""
-        DELETE FROM operan
-        WHERE julianday('now') - julianday(tanggal) > 15
-    """)
+    c.execute("DELETE FROM operan WHERE julianday('now') - julianday(tanggal) > 15")
     conn.commit()
 except Exception as e:
     print("Auto delete error:", e)
 
-# =========================
-# TABLE
-# =========================
+# Pembuatan Table
 c.execute("""
 CREATE TABLE IF NOT EXISTS operan (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +75,6 @@ conn.commit()
 # SHIFT AUTO
 # =========================
 jam = datetime.now(jakarta).hour
-
 if jam < 14:
     auto_shift = "Pagi"
 elif jam < 21:
@@ -104,270 +95,215 @@ st.sidebar.title("🏥 Pilih Unit")
 selected_unit = st.sidebar.selectbox("Unit", unit_list)
 
 # =========================
+# DIALOG UNTUK EDIT DATA (Lebih Aman & Presisi)
+# =========================
+@st.dialog("✏️ Edit Data Operan")
+def edit_dialog(row_data):
+    st.write(f"Pasien: **{row_data['nama_pasien']}** ({row_data['no_rm']})")
+    new_operan = st.text_area("Isi Operan Baru", value=row_data['operan'], height=150)
+    user_edit = st.text_input("Nama Pengedit / PJ Baru", value=row_data['pj_operan'])
+    
+    if st.button("Simpan Perubahan"):
+        if new_operan.strip() and user_edit.strip():
+            waktu_sekarang = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
+            c.execute("""
+                UPDATE operan 
+                SET operan = ?, edited_by = ?, edited_at = ?, pj_operan = ? 
+                WHERE id = ?
+            """, (new_operan, user_edit, waktu_sekarang, user_edit, row_data['id']))
+            conn.commit()
+            st.success("Data berhasil diperbarui!")
+            st.rerun()
+        else:
+            st.error("Semua kolom harus diisi!")
+
+# =========================
 # SEARCH
 # =========================
-st.subheader("🔎 Cari Pasien")
-
+st.subheader("🔎 Cari Pasien (Semua Unit)")
 search = st.text_input("Cari No RM / Nama")
 
 if len(search) >= 3:
-
     df_search = pd.read_sql_query("""
-        SELECT *
+        SELECT tanggal, unit, shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan 
         FROM operan
-        WHERE no_rm LIKE ?
-        OR nama_pasien LIKE ?
-        ORDER BY id DESC
-        LIMIT 50
+        WHERE no_rm LIKE ? OR nama_pasien LIKE ?
+        ORDER BY id DESC LIMIT 50
     """, conn, params=(f"%{search}%", f"%{search}%"))
-
-    st.dataframe(df_search, use_container_width=True, height=300)
+    st.dataframe(df_search, use_container_width=True)
 
 st.divider()
 
 # =========================
-# INPUT
+# INPUT FORM
 # =========================
 st.subheader(f"📝 Input Operan - {selected_unit}")
-
-with st.form("form"):
-
+with st.form("form_input", clear_on_submit=True):
     col1, col2 = st.columns(2)
-
     with col1:
-        tanggal = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
-
-        st.text_input("Tanggal", value=tanggal, disabled=True)
+        waktu_input = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
+        st.text_input("Tanggal", value=waktu_input, disabled=True)
         st.text_input("Shift", value=auto_shift, disabled=True)
-
-        shift = auto_shift
-
         no_rm = st.text_input("No RM")
         nama_pasien = st.text_input("Nama Pasien")
-
     with col2:
-        kamar = st.text_input("Kamar")
-        diagnosa = st.text_input("Diagnosa")
-        pj_operan = st.text_input("PJ Operan")
+        kamar = st.text_input("Kamar / Bed")
+        diagnosa = st.text_input("Diagnosa Medis")
+        pj_operan = st.text_input("PJ Penyerah Operan")
+        
+    operan = st.text_area("Isi Instruksi / Catatan Operan", height=130, max_chars=1500)
+    submit = st.form_submit_button("Simpan Data")
 
-    operan = st.text_area("Operan", height=130, max_chars=1500)
-
-    submit = st.form_submit_button("Simpan")
-
-# =========================
-# SAVE
-# =========================
 if submit:
-
-    if no_rm and nama_pasien:
-
+    # Validasi ketat agar tidak ada data kosong yang krusial
+    if not (no_rm and nama_pasien and kamar and diagnosa and operan and pj_operan):
+        st.error("❌ Gagal menyimpan! Semua kolom wajib diisi demi keselamatan pasien.")
+    else:
         c.execute("""
-            INSERT INTO operan (
-                tanggal, unit, shift,
-                no_rm, nama_pasien,
-                kamar, diagnosa,
-                operan, pj_operan
-            )
+            INSERT INTO operan (tanggal, unit, shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            tanggal, selected_unit, shift,
-            no_rm, nama_pasien,
-            kamar, diagnosa,
-            operan, pj_operan
-        ))
-
+        """, (waktu_input, selected_unit, auto_shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan))
         conn.commit()
-
-        st.success("Tersimpan")
+        st.success("✅ Data operan berhasil disimpan!")
         st.rerun()
-
-# =========================
-# STATE
-# =========================
-if "open_detail" not in st.session_state:
-    st.session_state["open_detail"] = None
-
-if "confirm_delete" not in st.session_state:
-    st.session_state["confirm_delete"] = None
 
 # =========================
 # DATA LIST
 # =========================
-st.subheader("📋 Data Operan")
-
+st.subheader(f"📋 Data Operan Aktif (7 Hari Terakhir) - {selected_unit}")
 df = pd.read_sql_query("""
-SELECT *
-FROM operan
-WHERE unit = ?
-AND julianday('now') - julianday(tanggal) <= 7
-ORDER BY id DESC
+    SELECT * FROM operan 
+    WHERE unit = ? AND julianday('now') - julianday(tanggal) <= 7
+    ORDER BY id DESC
 """, conn, params=(selected_unit,))
 
-for _, r in df.iterrows():
-
-    st.markdown("---")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.write(f"📅 {r['tanggal']}")
-    col2.write(f"⏱ Shift: {r['shift']}")
-    col3.write(f"🏥 No RM: {r['no_rm']}")
-    col4.write(f"👤 Pasien: {r['nama_pasien']}")
-
-    st.write(f"🏠 {r['kamar']} | 🧾 {r['diagnosa']} | 👨‍⚕️ {r['pj_operan']}")
-
-    colA, colB = st.columns([1, 1])
-
-    # DETAIL
-    if colA.button("📄 Detail", key=f"detail_{r['id']}"):
-
-        if st.session_state["open_detail"] == r["id"]:
-            st.session_state["open_detail"] = None
-        else:
-            st.session_state["open_detail"] = r["id"]
-
-    # DELETE BUTTON
-    if colB.button("🗑 Hapus", key=f"del_{r['id']}"):
-        st.session_state["confirm_delete"] = r["id"]
-
-    # CONFIRM DELETE
-    if st.session_state["confirm_delete"] == r["id"]:
-
-        st.warning(f"⚠️ Yakin ingin menghapus pasien: {r['nama_pasien']} ?")
-
-        col_yes, col_no = st.columns(2)
-
-        with col_yes:
-            if st.button("✅ Ya, Hapus", key=f"yes_{r['id']}"):
-
-                c.execute("DELETE FROM operan WHERE id=?", (r["id"],))
-                conn.commit()
-
-                st.session_state["confirm_delete"] = None
-                st.rerun()
-
-        with col_no:
-            if st.button("❌ Batal", key=f"no_{r['id']}"):
-                st.session_state["confirm_delete"] = None
-                st.rerun()
-
-    # DETAIL SHOW
-    if st.session_state["open_detail"] == r["id"]:
-        st.info(r["operan"])
-        st.caption(f"✏️ Edit: {r['edited_by']} | {r['edited_at']}")
+if df.empty:
+    st.info("Belum ada data operan untuk unit ini dalam 7 hari terakhir.")
+else:
+    for _, r in df.iterrows():
+        with st.container(border=True):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(f"📅 **Tanggal:** {r['tanggal']}")
+            c2.markdown(f"⏱ **Shift:** {r['shift']}")
+            c3.markdown(f"🏥 **No RM:** {r['no_rm']}")
+            c4.markdown(f"👤 **Pasien:** {r['nama_pasien']}")
+            
+            st.markdown(f"🏠 **Kamar:** {r['kamar']} | 🧾 **Diagnosa:** {r['diagnosa']} | 👨‍⚕️ **PJ:** {r['pj_operan']}")
+            
+            # Tombol Aksi yang Jauh Lebih Rapi
+            cA, cB, cC = st.columns([1, 1, 4])
+            
+            with cA:
+                # Toggle detail langsung memanfaatkan ekspander bawaan agar UI bersih
+                with st.expander("📄 Lihat Catatan"):
+                    st.info(r['operan'])
+                    if r['edited_by']:
+                        st.caption(f"✏️ Diubah oleh: {r['edited_by']} ({r['edited_at']})")
+            with cB:
+                if st.button("✏️ Edit", key=f"btn_edit_{r['id']}"):
+                    edit_dialog(r)
+            with cC:
+                if st.button("🗑 Hapus", key=f"btn_del_{r['id']}"):
+                    st.session_state[f"confirm_del_{r['id']}"] = True
+            
+            # Konfirmasi hapus per baris yang stabil
+            if st.session_state.get(f"confirm_del_{r['id']}", False):
+                st.error(f"Apakah Anda yakin ingin menghapus data {r['nama_pasien']}?")
+                cx, cy = st.columns([1, 5])
+                if cx.button("Ya, Hapus", key=f"yes_del_{r['id']}"):
+                    c.execute("DELETE FROM operan WHERE id=?", (r['id'],))
+                    conn.commit()
+                    del st.session_state[f"confirm_del_{r['id']}"]
+                    st.rerun()
+                if cy.button("Batal", key=f"no_del_{r['id']}"):
+                    del st.session_state[f"confirm_del_{r['id']}"]
+                    st.rerun()
 
 # =========================
-# EDIT
+# PDF EXPORT (Perbaikan Wrap Text)
 # =========================
 st.divider()
-st.subheader("✏️ Edit Operan")
+st.subheader("⬇️ Rekap Cetak PDF")
 
-edit_rm = st.text_input("No RM Edit")
-edit_by = st.text_input("Nama Pengedit")
-edit_text = st.text_area("Operan Baru")
-
-if st.button("Update"):
-
-    waktu = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
-
-    # =========================
-    # CEK NO RM ADA ATAU TIDAK
-    # =========================
-    cek = c.execute("""
-        SELECT COUNT(*)
-        FROM operan
-        WHERE no_rm = ?
-    """, (edit_rm,)).fetchone()[0]
-
-    if cek == 0:
-        st.error("❌ Tidak ada No RM / pasien yang sesuai")
-
-    else:
-        # =========================
-        # UPDATE DATA TERAKHIR
-        # =========================
-        c.execute("""
-            UPDATE operan
-            SET operan = ?, edited_by = ?, edited_at = ?
-            WHERE id = (
-                SELECT id FROM operan
-                WHERE no_rm = ?
-                ORDER BY id DESC
-                LIMIT 1
-            )
-        """, (edit_text, edit_by, waktu, edit_rm))
-
-        conn.commit()
-
-        st.success("✅ Operan berhasil diupdate (data terakhir)")
-        st.rerun()
-
- 
-# =========================
-# PDF EXPORT
-# =========================
-st.divider()
-st.subheader("⬇️ Download PDF")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    start_date = st.date_input("Dari")
-
-with col2:
-    end_date = st.date_input("Sampai")
+col_d1, col_d2 = st.columns(2)
+with col_d1:
+    start_date = st.date_input("Mulai Tanggal")
+with col_d2:
+    end_date = st.date_input("Sampai Tanggal")
 
 pdf_df = pd.read_sql_query("""
-SELECT *
-FROM operan
-WHERE unit = ?
-AND julianday('now') - julianday(tanggal) <= 35
-AND tanggal BETWEEN ? AND ?
-ORDER BY id DESC
-""", conn, params=(
-    selected_unit,
-    f"{start_date} 00:00:00",
-    f"{end_date} 23:59:59"
-))
+    SELECT tanggal, shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan
+    FROM operan
+    WHERE unit = ? AND tanggal BETWEEN ? AND ?
+    ORDER BY tanggal ASC
+""", conn, params=(selected_unit, f"{start_date} 00:00:00", f"{end_date} 23:59:59"))
 
-def generate_pdf(df):
-
+def generate_pdf(dataframe):
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=landscape(A4),
+        rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20
+    )
     styles = getSampleStyleSheet()
+    
+    # Custom Style khusus untuk isi tabel agar teks otomatis turun ke bawah (Wrap)
+    cell_style = ParagraphStyle(
+        'CellText',
+        parent=styles['Normal'],
+        fontSize=7,
+        leading=9
+    )
+    
+    header_style = ParagraphStyle(
+        'HeaderStyle',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.whitesmoke,
+        fontName="Helvetica-Bold"
+    )
 
     elements = []
-    elements.append(Paragraph("Operan Shift", styles["Title"]))
-    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"<b>LOG OPERAN SHIFT - RS SARI ASIH SANGIANG</b>", styles["Title"]))
+    elements.append(Paragraph(f"Unit: {selected_unit} | Periode: {start_date} s/d {end_date}", styles["Heading3"]))
+    elements.append(Spacer(1, 15))
 
-    data = [list(df.columns)]
+    # Judul Kolom yang Manusiawi
+    headers = ["Tanggal", "Shift", "No RM", "Nama Pasien", "Kamar", "Diagnosa", "Catatan Operan", "PJ"]
+    data = [[Paragraph(f"<b>{h}</b>", header_style) for h in headers]]
 
-    for r in df.values.tolist():
-        data.append(r)
+    # Memasukkan data dan membungkusnya dengan Paragraph agar wrap-text berfungsi
+    for row in dataframe.values.tolist():
+        formatted_row = [Paragraph(str(cell), cell_style) for cell in row]
+        data.append(formatted_row)
 
-    table = Table(data)
-
+    # Set proporsi lebar kolom (Total lebar kertas A4 Landscape setelah margin sekitar 792 pt)
+    # Kita berikan porsi terbesar untuk kolom Catatan Operan (kolom ke-7)
+    col_widths = [75, 35, 45, 95, 45, 95, 320, 50]
+    
+    table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.grey),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
-        ("GRID", (0,0), (-1,-1), 0.5, colors.black),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE", (0,0), (-1,-1), 8),
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1A365D")), # Warna biru gelap medis
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ("TOPPADDING", (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
     ]))
 
     elements.append(table)
     doc.build(elements)
-
     return buffer.getvalue()
 
 if not pdf_df.empty:
-
     st.download_button(
-        "Download PDF",
-        generate_pdf(pdf_df),
-        file_name=f"operan_{selected_unit}.pdf",
+        label="Download PDF Terfilter",
+        data=generate_pdf(pdf_df),
+        file_name=f"Operan_{selected_unit}_{start_date}_to_{end_date}.pdf",
         mime="application/pdf"
     )
+else:
+    st.warning("Tidak ditemukan data pada rentang tanggal tersebut untuk dicetak.")
 
 # =========================
 # FOOTER
