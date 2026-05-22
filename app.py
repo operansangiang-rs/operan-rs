@@ -51,7 +51,6 @@ try:
         DELETE FROM operan 
         WHERE julianday('now', 'localtime') - julianday(tanggal) > 180
     """)
-    # Menambahkan index agar query pencarian arsip data 6 bulan tetap secepat kilat
     c.execute("CREATE INDEX IF NOT EXISTS idx_tanggal ON operan(tanggal);")
     c.execute("CREATE INDEX IF NOT EXISTS idx_unit ON operan(unit);")
     c.execute("CREATE INDEX IF NOT EXISTS idx_no_rm ON operan(no_rm);")
@@ -120,7 +119,6 @@ selected_unit = st.sidebar.selectbox("Unit", unit_list)
 def edit_dialog(row_data):
     st.write(f"Pasien: **{row_data['nama_pasien']}** ({row_data['no_rm']})")
     
-    # Input penjamin di edit dialog menggunakan index penyesuaian (Default Umum jika data lama kosong)
     list_penjamin = ["BPJS", "Umum", "Asuransi Swasta / Perusahaan"]
     current_penjamin = row_data['penjamin'] if pd.notna(row_data['penjamin']) else "Umum"
     default_idx = list_penjamin.index(current_penjamin) if current_penjamin in list_penjamin else 1
@@ -146,7 +144,7 @@ def edit_dialog(row_data):
             st.error("Semua kolom harus diisi!")
 
 # =========================
-# SEARCH (Menjangkau s/d 6 Bulan Riwayat Pasien)
+# SEARCH (Arsip 6 Bulan Terakhir)
 # =========================
 st.subheader("🔎 Cari Riwayat Pasien (Arsip 6 Bulan Terakhir)")
 search = st.text_input("Cari No RM / Nama Pasien")
@@ -178,7 +176,6 @@ with st.form("form_input", clear_on_submit=True):
         st.text_input("Shift", value=auto_shift, disabled=True)
         no_rm = st.text_input("No RM")
         nama_pasien = st.text_input("Nama Pasien")
-        # Pilihan penjamin berada di posisi kolom kiri tepat di bawah nama pasien
         penjamin = st.selectbox("Jenis Penjamin / Pembiayaan", ["BPJS", "Umum", "Asuransi Swasta / Perusahaan"])
         
     with col2:
@@ -214,18 +211,15 @@ df = pd.read_sql_query("""
 if df.empty:
     st.info("Belum ada data operan aktif untuk unit ini dalam 7 hari terakhir.")
 else:
-    # Mengambil list No RM unik agar pasien tidak tampil dobel-dobel di menu utama
     pasien_unik = df['no_rm'].unique()
     
     for rm in pasien_unik:
         df_pasien = df[df['no_rm'] == rm]
         info_terbaru = df_pasien.iloc[0]
         
-        # Pengaman ekstra jika ada kolom penjamin di data lama yang bernilai NaN / Kosong
         val_penjamin = info_terbaru['penjamin'] if pd.notna(info_terbaru['penjamin']) else "Umum"
         badge_penjamin = "🟢 BPJS" if val_penjamin == "BPJS" else "🔵 " + str(val_penjamin)
         
-        # Kontainer Utama Pasien
         with st.container(border=True):
             col_p1, col_p2, col_p3, col_p4 = st.columns([1.2, 2, 1.2, 1])
             col_p1.markdown(f"🏥 **No RM:** {info_terbaru['no_rm']}")
@@ -235,7 +229,6 @@ else:
             
             st.markdown("<p style='margin:2px 0px; color:#777; font-size:13px;'><b>🩺 Timeline Instruksi Medis & Operan Shift:</b></p>", unsafe_allow_html=True)
             
-            # Looping instruksi dokter/shift yang masuk untuk pasien ini
             for _, r in df_pasien.iterrows():
                 avatar_style = "user" if r['shift'] == "Pagi" else "assistant"
                 with st.chat_message(avatar_style):
@@ -246,7 +239,6 @@ else:
                     if r['edited_by']:
                         st.caption(f"✏️ Terakhir diubah oleh: {r['edited_by']} ({r['edited_at']})")
                         
-                    # Tombol Manajemen Aksi per baris instruksi
                     cA, cB = st.columns([1, 8])
                     with cA:
                         if st.button("✏️ Edit", key=f"btn_edit_{r['id']}"):
@@ -255,7 +247,6 @@ else:
                         if st.button("🗑 Hapus", key=f"btn_del_{r['id']}"):
                             st.session_state[f"confirm_del_{r['id']}"] = True
                             
-                    # Trigger konfirmasi hapus baris spesifik secara aman
                     if st.session_state.get(f"confirm_del_{r['id']}", False):
                         st.error("Apakah Anda yakin ingin menghapus catatan instruksi spesifik ini?")
                         cx, cy = st.columns([1, 10])
@@ -269,10 +260,10 @@ else:
                             st.rerun()
 
 # =========================
-# PDF EXPORT (Mendukung s/d Rentang 6 Bulan)
+# PDF EXPORT & STATISTIK REKAP PERIODE
 # =========================
 st.divider()
-st.subheader("⬇️ Rekap Cetak PDF")
+st.subheader("⬇️ Rekap Cetak PDF & Analisis Data Periode")
 
 col_d1, col_d2 = st.columns(2)
 with col_d1:
@@ -280,6 +271,7 @@ with col_d1:
 with col_d2:
     end_date = st.date_input("Sampai Tanggal")
 
+# Ambil data lengkap untuk cetak PDF
 pdf_df = pd.read_sql_query("""
     SELECT tanggal, shift, no_rm, nama_pasien, penjamin, kamar, diagnosa, operan, pj_operan
     FROM operan
@@ -297,18 +289,10 @@ def generate_pdf(dataframe):
     styles = getSampleStyleSheet()
     
     cell_style = ParagraphStyle(
-        'CellText',
-        parent=styles['Normal'],
-        fontSize=7,
-        leading=9
+        'CellText', parent=styles['Normal'], fontSize=7, leading=9
     )
-    
     header_style = ParagraphStyle(
-        'HeaderStyle',
-        parent=styles['Normal'],
-        fontSize=8,
-        textColor=colors.whitesmoke,
-        fontName="Helvetica-Bold"
+        'HeaderStyle', parent=styles['Normal'], fontSize=8, textColor=colors.whitesmoke, fontName="Helvetica-Bold"
     )
 
     elements = []
@@ -339,15 +323,60 @@ def generate_pdf(dataframe):
     doc.build(elements)
     return buffer.getvalue()
 
+# Tombol Cetak PDF Utama
 if not pdf_df.empty:
     st.download_button(
-        label="Download PDF Terfilter",
+        label="📄 Download Rekap PDF Terfilter",
         data=generate_pdf(pdf_df),
         file_name=f"Operan_{selected_unit}_{start_date}_to_{end_date}.pdf",
         mime="application/pdf"
     )
-else:
-    st.warning("Tidak ditemukan data pada rentang tanggal tersebut untuk dicetak.")
+    
+  # 📊 SEKSI TAMBAHAN: MENGGUNAKAN EXPANDER AGAR LAYAR TETAP RAPI (MODEL LIPAT)
+    st.write("")
+    with st.expander("📊 Lihat Ringkasan Statistik & Grafik Pasien Terfilter", expanded=False):
+        
+        # Mengisi data penjamin kosong ke 'Umum' demi konsistensi grafik
+        pdf_df['penjamin'] = pdf_df['penjamin'].fillna('Umum').replace('', 'Umum')
+        
+        # Menghitung pasien unik (berdasarkan No RM) untuk akurasi jumlah pasien asli
+        df_pasien_unik = pdf_df.drop_duplicates(subset=['no_rm'])
+        total_pasien_periode = len(df_pasien_unik)
+        
+        # Hitung distribusi penjamin dari list pasien unik
+        counts = df_pasien_unik['penjamin'].value_counts()
+        total_bpjs = counts.get('BPJS', 0)
+        total_umum = counts.get('Umum', 0)
+        total_asuransi = counts.get('Asuransi Swasta / Perusahaan', 0)
+        
+        # Tampilan kartu angka (Metric Card)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(label="👥 Total Pasien Unik", value=f"{total_pasien_periode} Orang")
+        m2.metric(label="🟢 Total BPJS", value=f"{total_bpjs} Pasien")
+        m3.metric(label="🔵 Total Umum", value=f"{total_umum} Pasien")
+        m4.metric(label="🟠 Total Asuransi/Kerja", value=f"{total_asuransi} Pasien")
+        
+        # Tampilan Grafik Visual Berdampingan
+        st.write("")
+        g1, g2 = st.columns([2, 1])
+        
+        with g1:
+            st.markdown("**Grafik Distribusi Penjamin Pasien (Bar Chart)**")
+            chart_data = pd.DataFrame({
+                'Jenis Penjamin': counts.index,
+                'Jumlah Pasien': counts.values
+            }).set_index('Jenis Penjamin')
+            
+            st.bar_chart(chart_data, color="#1A365D")
+            
+        with g2:
+            st.markdown("**Tabel Rincian Persentase**")
+            rekap_tabel = pd.DataFrame({
+                'Penjamin': counts.index,
+                'Total Pasien': counts.values,
+                'Persentase (%)': ((counts.values / total_pasien_periode) * 100).round(1)
+            })
+            st.dataframe(rekap_tabel, use_container_width=True, hide_index=True)
 
 # =========================
 # FOOTER
