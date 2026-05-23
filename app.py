@@ -4,6 +4,7 @@ import pandas as pd
 from io import BytesIO
 from datetime import datetime, timedelta
 import pytz
+import time  # Ditambahkan untuk jeda notifikasi sukses
 
 from reportlab.platypus import (
     SimpleDocTemplate,
@@ -137,7 +138,6 @@ try:
     columns_info = c.fetchall()
     
     if backup_rows:
-        # Pake file temp lokal sementara di server, bukan BytesIO langsung ke sqlite3
         temp_filename = "temp_backup.db"
         
         mem_conn = sqlite3.connect(temp_filename)
@@ -146,7 +146,6 @@ try:
         create_table_sql = "CREATE TABLE IF NOT EXISTS operan (" + ", ".join([f"{col[1]} {col[2]}" for col in columns_info]) + ")"
         mem_c.execute(create_table_sql)
         
-        # Bersihkan data lama di file temp jika ada sisa proses sebelumnya
         mem_c.execute("DELETE FROM operan")
         
         placeholders = ", ".join(["?"] * len(columns_info))
@@ -154,7 +153,6 @@ try:
         mem_conn.commit()
         mem_conn.close()
         
-        # Baca file temp tadi ke dalam bentuk bytes agar bisa didownload
         with open(temp_filename, "rb") as f:
             db_bytes = f.read()
             
@@ -205,70 +203,78 @@ def edit_dialog(row_data):
         else:
             st.error("Semua kolom harus diisi!")
 
-# =========================
-# FUNGSI KELOLA DATA & PROTEKSI 2 HARI
-# =========================
+# ========================================================
+# FUNGSI KELOLA DATA & PROTEKSI 2 HARI (VERSI LIPAT)
+# ========================================================
 def render_timeline_operan(dataframe, context_key="main"):
-    """Fungsi bersama untuk menggambar timeline operan dengan batasan waktu edit max 2 hari"""
+    """Fungsi bersama untuk menggambar timeline operan dengan riwayat yang bisa dilipat"""
     waktu_sekarang = datetime.now(jakarta)
     
-    for _, r in dataframe.iterrows():
-        avatar_style = "user" if r['shift'] == "Pagi" else "assistant"
-        with st.chat_message(avatar_style):
-            st.markdown(f"⏱ **Shift {r['shift']}** | 📅 {r['tanggal']} | 👨‍⚕️ PJ: *{r['pj_operan']}*")
-            st.markdown(f"**Unit:** {r['unit']} | 🩺 **Diagnosa/Konsul:** {r['diagnosa']}")
-            st.info(f"💬 {r['operan']}")
-            
-            if r['edited_by']:
-                st.caption(f"✏️ Terakhir diubah oleh: {r['edited_by']} ({r['edited_at']})")
-            
-            # Cek Masa Kedaluwarsa Edit (Max 2 Hari / 48 Jam)
-            try:
-                tgl_input = datetime.strptime(r['tanggal'], "%Y-%m-%d %H:%M:%S")
-                tgl_input = jakarta.localize(tgl_input)
-                bisa_edit = (waktu_sekarang - tgl_input) <= timedelta(days=2)
-            except:
-                bisa_edit = False 
+    # Memakai expander supaya riwayatnya bisa dilipat-buka
+    with st.expander("📜 Lihat Detail Riwayat Operan Shift Pasien Ini", expanded=False):
+        for _, r in dataframe.iterrows():
+            avatar_style = "user" if r['shift'] == "Pagi" else "assistant"
+            with st.chat_message(avatar_style):
+                st.markdown(f"⏱ **Shift {r['shift']}** | 📅 {r['tanggal']} | 👨‍⚕️ PJ: *{r['pj_operan']}*")
+                st.markdown(f"**Unit:** {r['unit']} | 🩺 **Diagnosa/Konsul:** {r['diagnosa']}")
+                st.info(f"💬 {r['operan']}")
                 
-            if bisa_edit:
-                cA, cB = st.columns([1, 8])
-                with cA:
-                    if st.button("✏️ Edit", key=f"btn_edit_{context_key}_{r['id']}"):
-                        edit_dialog(r)
-                with cB:
-                    if st.button("🗑 Hapus", key=f"btn_del_{context_key}_{r['id']}"):
-                        st.session_state[f"confirm_del_{context_key}_{r['id']}"] = True
-                        
-                if st.session_state.get(f"confirm_del_{context_key}_{r['id']}", False):
-                    st.error("Apakah Anda yakin ingin menghapus catatan instruksi spesifik ini?")
-                    cx, cy = st.columns([1, 10])
-                    if cx.button("Ya, Hapus", key=f"yes_del_{context_key}_{r['id']}"):
-                        c.execute("DELETE FROM operan WHERE id=?", (r['id'],))
-                        conn.commit()
-                        del st.session_state[f"confirm_del_{context_key}_{r['id']}"]
-                        st.rerun()
-                    if cy.button("Batal", key=f"no_del_{context_key}_{r['id']}"):
-                        del st.session_state[f"confirm_del_{context_key}_{r['id']}"]
-                        st.rerun()
-            else:
-                st.caption("🔒 *Catatan ini telah dikunci (Sudah melewati batas waktu toleransi edit 2 hari).*")
+                if r['edited_by']:
+                    st.caption(f"✏️ Terakhir diubah oleh: {r['edited_by']} ({r['edited_at']})")
+                
+                # Cek Masa Kedaluwarsa Edit (Max 2 Hari / 48 Jam)
+                try:
+                    tgl_input = datetime.strptime(r['tanggal'], "%Y-%m-%d %H:%M:%S")
+                    tgl_input = jakarta.localize(tgl_input)
+                    bisa_edit = (waktu_sekarang - tgl_input) <= timedelta(days=2)
+                except:
+                    bisa_edit = False 
+                    
+                if bisa_edit:
+                    cA, cB = st.columns([1, 8])
+                    with cA:
+                        if st.button("✏️ Edit", key=f"btn_edit_{context_key}_{r['id']}"):
+                            edit_dialog(r)
+                    with cB:
+                        if st.button("🗑 Hapus", key=f"btn_del_{context_key}_{r['id']}"):
+                            st.session_state[f"confirm_del_{context_key}_{r['id']}"] = True
+                            
+                    if st.session_state.get(f"confirm_del_{context_key}_{r['id']}", False):
+                        st.error("Apakah Anda yakin ingin menghapus catatan instruksi spesifik ini?")
+                        cx, cy = st.columns([1, 10])
+                        if cx.button("Ya, Hapus", key=f"yes_del_{context_key}_{r['id']}"):
+                            c.execute("DELETE FROM operan WHERE id=?", (r['id'],))
+                            conn.commit()
+                            del st.session_state[f"confirm_del_{context_key}_{r['id']}"]
+                            st.rerun()
+                        if cy.button("Batal", key=f"no_del_{context_key}_{r['id']}"):
+                            del st.session_state[f"confirm_del_{context_key}_{r['id']}"]
+                            st.rerun()
+                else:
+                    st.caption("🔒 *Catatan ini telah dikunci (Sudah melewati batas waktu toleransi edit 2 hari).*")
 
-# =========================
-# 🔎 SEARCH OPTIMIZATION
-# =========================
-st.subheader("🔎 Cari Riwayat & Edit Pasien")
-search = st.text_input("Masukkan No RM / Nama Pasien", placeholder="Cari data untuk melihat riwayat atau mengedit data (Maksimal 6 bulan)...")
+# ========================================================
+# 🔎 SEARCH OPTIMIZATION & TAMBAH OPERAN INSTAN (FITUR BARU)
+# ========================================================
+st.subheader("🔎 Cari Pasien / Kamar & Tambah Operan Cepat")
+st.markdown("<p style='font-size:14px; color:#555;'>Ketik No RM, Nama Pasien, atau Nomor Kamar untuk melihat riwayat atau <b>menambah operan shift baru tanpa perlu mengetik ulang identitas pasien!</b></p>", unsafe_allow_html=True)
 
-if len(search.strip()) >= 3:
+search = st.text_input(
+    "Masukkan No RM / Nama Pasien / Nomor Kamar", 
+    placeholder="Contoh: 123456, Ahmad, atau Kamar 302..."
+)
+
+if len(search.strip()) >= 2:
+    # Query untuk mencari berdasarkan No RM, Nama, atau Kamar
     df_search = pd.read_sql_query("""
         SELECT * FROM operan
-        WHERE no_rm LIKE ? OR nama_pasien LIKE ?
-        ORDER BY tanggal DESC LIMIT 50
-    """, conn, params=(f"%{search}%", f"%{search}%"))
+        WHERE no_rm LIKE ? OR nama_pasien LIKE ? OR kamar LIKE ?
+        ORDER BY tanggal DESC LIMIT 60
+    """, conn, params=(f"%{search}%", f"%{search}%", f"%{search}%"))
     
     if not df_search.empty:
-        st.success(f"Ditemukan {len(df_search)} riwayat operan pasien. Data di bawah 2 hari masih dapat diedit.")
         search_pasien_unik = df_search['no_rm'].unique()
+        st.success(f"📌 Ditemukan {len(search_pasien_unik)} pasien yang cocok dengan kata kunci '{search}'.")
         
         for rm in search_pasien_unik:
             df_s_pasien = df_search[df_search['no_rm'] == rm]
@@ -276,6 +282,7 @@ if len(search.strip()) >= 3:
             val_penjamin = info_terbaru['penjamin'] if pd.notna(info_terbaru['penjamin']) else "Umum"
             badge_penjamin = "🟢 BPJS" if val_penjamin == "BPJS" else "🔵 " + str(val_penjamin)
             
+            # Box per pasien
             with st.container(border=True):
                 col_s1, col_s2, col_s3, col_s4 = st.columns([1.2, 2, 1.2, 1])
                 col_s1.markdown(f"🏥 **No RM:** {info_terbaru['no_rm']}")
@@ -283,16 +290,51 @@ if len(search.strip()) >= 3:
                 col_s3.markdown(f"💳 **Penjamin:** {badge_penjamin}")
                 col_s4.markdown(f"🏠 **Kamar:** {info_terbaru['kamar']}")
                 
-                render_timeline_operan(df_s_pasien, context_key="search")
+                # FORM INSTAN UNTUK MEMASUKKAN OPERAN BARU
+                with st.expander(f"➕ **Tambah Catatan Shift Baru untuk {info_terbaru['nama_pasien']}**", expanded=False):
+                    with st.form(key=f"quick_form_{info_terbaru['no_rm']}", clear_on_submit=True):
+                        st.markdown(f"**Unit Aktif:** {selected_unit} | **Shift Saat Ini:** {auto_shift}")
+                        
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            q_kamar = st.text_input("Konfirmasi/Ubah Kamar", value=info_terbaru['kamar'], key=f"q_kmr_{info_terbaru['no_rm']}")
+                            q_pj = st.text_input("PJ Penyerah Operan", key=f"q_pj_{info_terbaru['no_rm']}")
+                        with col_f2:
+                            q_diagnosa = st.text_input("Diagnosa Medis / Konsul Spesialis", value=info_terbaru['diagnosa'], key=f"q_dg_{info_terbaru['no_rm']}")
+                        
+                        q_operan = st.text_area("Isi Instruksi / Catatan Operan Baru", height=100, key=f"q_op_{info_terbaru['no_rm']}", placeholder="Tulis instruksi kelanjutan di sini...")
+                        
+                        submit_quick = st.form_submit_button("Simpan Operan Baru")
+                        
+                        if submit_quick:
+                            if not (q_operan.strip() and q_pj.strip() and q_kamar.strip() and q_diagnosa.strip()):
+                                st.error("❌ Gagal menyimpan! Catatan Operan, PJ, Kamar, dan Diagnosa wajib diisi.")
+                            else:
+                                waktu_quick = datetime.now(jakarta).strftime("%Y-%m-%d %H:%M:%S")
+                                c.execute("""
+                                    INSERT INTO operan (tanggal, unit, shift, no_rm, nama_pasien, kamar, diagnosa, operan, pj_operan, penjamin)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (waktu_quick, selected_unit, auto_shift, info_terbaru['no_rm'], info_terbaru['nama_pasien'], q_kamar.strip(), q_diagnosa.strip(), q_operan.strip(), q_pj.strip(), val_penjamin))
+                                conn.commit()
+                                
+                                # Tampilkan notifikasi sukses yang mantap
+                                st.success(f"🎉 Berhasil! Operan baru untuk {info_terbaru['nama_pasien']} telah tersimpan ke database.")
+                                st.toast(f"✅ Operan {info_terbaru['nama_pasien']} disimpan!", icon="🟢")
+                                
+                                time.sleep(1.2)  # Jeda biar perawat sempat baca
+                                st.rerun()
+                
+                # Riwayat operan lama yang sudah bisa dilipat
+                render_timeline_operan(df_s_pasien, context_key=f"src_{info_terbaru['no_rm']}")
     else:
-        st.info("Tidak ditemukan riwayat kunjungan pasien dengan kata kunci tersebut.")
+        st.info("Tidak ditemukan data pasien atau kamar dengan kata kunci tersebut.")
 
 st.divider()
 
 # =========================
-# INPUT FORM
+# INPUT FORM (Untuk Pasien Baru)
 # =========================
-st.subheader(f"📝 Input Operan - {selected_unit}")
+st.subheader(f"📝 Input Operan Pasien Baru - {selected_unit}")
 with st.form("form_input", clear_on_submit=True):
     col1, col2 = st.columns(2)
     
@@ -321,11 +363,16 @@ if submit:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (waktu_input, selected_unit, auto_shift, no_rm.strip(), nama_pasien.strip(), kamar.strip(), diagnosa.strip(), operan.strip(), pj_operan.strip(), penjamin))
         conn.commit()
+        
+        # Notifikasi Sukses Form Manual
+        st.success(f"🎉 Pasien Baru Berhasil Ditambahkan! Data operan {nama_pasien.strip()} telah disimpan.")
         st.toast("✅ Data operan berhasil disimpan!", icon="🟢")
+        
+        time.sleep(1.2)
         st.rerun()
 
 # =========================
-# DATA LIST
+# DATA LIST (2 Hari Terakhir)
 # =========================
 st.subheader(f"📋 Data Operan Aktif (2 Hari Terakhir) - {selected_unit}")
 df = pd.read_sql_query("""
@@ -353,8 +400,7 @@ else:
             col_p3.markdown(f"💳 **Penjamin:** {badge_penjamin}")
             col_p4.markdown(f"🏠 **Kamar:** {info_terbaru['kamar']}")
             
-            st.markdown("<p style='margin:2px 0px; color:#777; font-size:13px;'><b>🩺 Timeline Instruksi Medis & Operan Shift (Maksimal 3 Shift Terbaru):</b></p>", unsafe_allow_html=True)
-            
+            # Memanggil fungsi timeline versi lipat (hanya ambil maks 3 data teratas)
             render_timeline_operan(df_pasien.head(3), context_key="main")
 
 # =========================
