@@ -106,7 +106,7 @@ else:
 # =========================
 unit_list = [
     "ICU","RPU LT 1","RPU LT 2","RPU LT 3 GL","RPU LT 3 GB",
-    "RPU LT 4","RPU LT 5","Hemodialisa","Kamar Operasi",
+    "RPU LT 4","RPA LT 5","Hemodialisa","Kamar Operasi",
     "IGD","NICU","PICU"
 ]
 
